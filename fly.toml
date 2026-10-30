@@ -1,0 +1,31 @@
+# The Fool's Attendant — Fly.io configuration
+#
+# 1. Change `app` below to a globally unique name.
+# 2. `fly volumes create fools_data --size 1`
+# 3. `fly secrets set DISCORD_TOKEN=... GEMINI_API_KEY=...`
+# 4. `fly deploy`
+
+app = "fools-attendant"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# A single always-on worker process (a bot needs no HTTP service).
+[processes]
+  app = "python main.py"
+
+[env]
+  # Persist the SQLite database and settings on the mounted volume.
+  DATABASE_PATH = "/data/fools_attendant.db"
+  SETTINGS_PATH = "/data/settings.json"
+
+# Mount a Fly volume at /data so state survives restarts and redeploys.
+[mounts]
+  source = "fools_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  processes = ["app"]
