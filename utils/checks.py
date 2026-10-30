@@ -46,6 +46,16 @@ def is_moderator(interaction: discord.Interaction) -> bool:
     return False
 
 
+def is_beyonder(interaction: discord.Interaction) -> bool:
+    """Check if the interacting member has sworn fealty and drunk a Sequence 9 potion."""
+    bot = interaction.client
+    db = getattr(bot, "db", None)
+    if db is None:
+        return True
+    user = db.get_user(interaction.user.id)
+    return bool(user and user.get("pathway") is not None and user.get("sequence") is not None)
+
+
 def _owner_predicate(interaction: discord.Interaction) -> bool:
     if is_owner(interaction):
         return True
@@ -64,6 +74,18 @@ def _mod_predicate(interaction: discord.Interaction) -> bool:
     raise app_commands.CheckFailure("Only a delegated moderator may perform this act.")
 
 
+def _beyonder_predicate(interaction: discord.Interaction) -> bool:
+    if is_beyonder(interaction):
+        return True
+    raise app_commands.CheckFailure(
+        "You are an ordinary mortal. In this realm, only members who seek supernatural power "
+        "and authority brew and drink their potion (`/pathway choose <pathway>`) to awaken as a Beyonder. "
+        "Mortals cannot wield supernatural abilities or invoke Beyonder commands."
+    )
+
+
 owner_only = app_commands.check(_owner_predicate)
 admin_only = app_commands.check(_admin_predicate)
 mod_only = app_commands.check(_mod_predicate)
+beyonder_only = app_commands.check(_beyonder_predicate)
+

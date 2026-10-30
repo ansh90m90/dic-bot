@@ -59,7 +59,10 @@ class Database:
                     fog_until REAL NOT NULL DEFAULT 0,
                     last_daily_date TEXT,
                     beyond_role_id TEXT,
-                    equipped_artifact TEXT
+                    last_active_ts REAL NOT NULL DEFAULT 0,
+                    last_decay_check_ts REAL NOT NULL DEFAULT 0,
+                    last_demotion_ts REAL NOT NULL DEFAULT 0,
+                    vc_minutes INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS inventory (
@@ -67,18 +70,6 @@ class Database:
                     item_key TEXT NOT NULL,
                     qty INTEGER NOT NULL DEFAULT 1,
                     PRIMARY KEY (user_id, item_key)
-                );
-
-                CREATE TABLE IF NOT EXISTS artifacts (
-                    artifact_id TEXT PRIMARY KEY,
-                    owner_id INTEGER NOT NULL,
-                    definition_key TEXT,
-                    name TEXT,
-                    grade INTEGER,
-                    effect TEXT,
-                    curse TEXT,
-                    equipped INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS oracle_queries (
@@ -112,23 +103,35 @@ class Database:
                 );
                 """
             )
-        for stmt in (
-            "CREATE INDEX IF NOT EXISTS idx_users_corruption ON users(corruption)",
-            "CREATE INDEX IF NOT EXISTS idx_artifacts_equipped ON artifacts(equipped)",
-        ):
-            with self._lock, self._conn:
-                self._conn.execute(stmt)
-        # Migration: add last_daily_date for databases created before this column existed.
+
+        # Drop artifacts table and legacy indexes if they exist
+        with self._lock, self._conn:
+            self._conn.execute("DROP TABLE IF EXISTS artifacts")
+            self._conn.execute("DROP INDEX IF EXISTS idx_artifacts_equipped")
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_users_corruption ON users(corruption)")
+
+        # Migration: drop equipped_artifact column if it exists
         try:
             with self._lock, self._conn:
-                self._conn.execute("ALTER TABLE users ADD COLUMN last_daily_date TEXT")
+                self._conn.execute("ALTER TABLE users DROP COLUMN equipped_artifact")
         except sqlite3.OperationalError:
             pass
-        try:
-            with self._lock, self._conn:
-                self._conn.execute("ALTER TABLE users ADD COLUMN beyond_role_id TEXT")
-        except sqlite3.OperationalError:
-            pass
+
+        # Migrations for new columns on older database files
+        migrations = (
+            "ALTER TABLE users ADD COLUMN last_daily_date TEXT",
+            "ALTER TABLE users ADD COLUMN beyond_role_id TEXT",
+            "ALTER TABLE users ADD COLUMN last_active_ts REAL NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN last_decay_check_ts REAL NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN last_demotion_ts REAL NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN vc_minutes INTEGER NOT NULL DEFAULT 0",
+        )
+        for stmt in migrations:
+            try:
+                with self._lock, self._conn:
+                    self._conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
 
     def close(self) -> None:
         with self._lock:
@@ -161,9 +164,11 @@ class Database:
     def ensure_user(self, user_id: int) -> Dict:
         user = self.get_user(user_id)
         if user is None:
+            now = self._now()
             self._execute(
-                "INSERT INTO users (user_id, gold) VALUES (?, ?)",
-                (user_id, int(settings.get("starting_gold", config.STARTING_GOLD))),
+                "INSERT INTO users (user_id, gold, last_active_ts, last_decay_check_ts) "
+                "VALUES (?, ?, ?, ?)",
+                (user_id, int(settings.get("starting_gold", config.STARTING_GOLD)), now, now),
             )
             user = self.get_user(user_id)
         return user  # type: ignore[return-value]
@@ -173,89 +178,146 @@ class Database:
 
     def register_pathway(self, user_id: int, pathway_key: str) -> None:
         self.ensure_user(user_id)
+        now = self._now()
         self._execute(
-            "UPDATE users SET pathway = ?, sequence = 9, digestion = 0, joined_at = ? "
-            "WHERE user_id = ?",
-            (pathway_key, datetime.now(timezone.utc).isoformat(), user_id),
+            "UPDATE users SET pathway = ?, sequence = 9, digestion = 0, joined_at = ?, "
+            "last_active_ts = ? WHERE user_id = ?",
+            (pathway_key, datetime.now(timezone.utc).isoformat(), now, user_id),
         )
 
     def set_sequence(self, user_id: int, pathway_key: str, sequence: int) -> None:
         self._execute(
-            "UPDATE users SET pathway = ?, sequence = ?, digestion = 0 WHERE user_id = ?",
-            (pathway_key, sequence, user_id),
+            "UPDATE users SET pathway = ?, sequence = ?, digestion = 0, last_active_ts = ? "
+            "WHERE user_id = ?",
+            (pathway_key, sequence, self._now(), user_id),
         )
 
     def add_digestion(self, user_id: int, amount: float) -> float:
         """Add digestion, cap at 100, return the new value."""
         user = self.ensure_user(user_id)
         new_val = min(100.0, float(user["digestion"]) + amount)
-        self._execute("UPDATE users SET digestion = ? WHERE user_id = ?", (new_val, user_id))
+        self._execute(
+            "UPDATE users SET digestion = ?, last_active_ts = ? WHERE user_id = ?",
+            (new_val, self._now(), user_id),
+        )
+        return new_val
+
+    def set_digestion(self, user_id: int, amount: float) -> float:
+        new_val = min(100.0, max(0.0, amount))
+        self._execute(
+            "UPDATE users SET digestion = ?, last_active_ts = ? WHERE user_id = ?",
+            (new_val, self._now(), user_id),
+        )
         return new_val
 
     def add_gold(self, user_id: int, amount: int) -> int:
         user = self.ensure_user(user_id)
         new_val = max(0, int(user["gold"]) + amount)
-        self._execute("UPDATE users SET gold = ? WHERE user_id = ?", (new_val, user_id))
+        self._execute(
+            "UPDATE users SET gold = ?, last_active_ts = ? WHERE user_id = ?",
+            (new_val, self._now(), user_id),
+        )
         return new_val
 
     def add_tarot(self, user_id: int, amount: int) -> int:
         user = self.ensure_user(user_id)
         new_val = max(0, int(user["tarot_coins"]) + amount)
-        self._execute("UPDATE users SET tarot_coins = ? WHERE user_id = ?", (new_val, user_id))
+        self._execute(
+            "UPDATE users SET tarot_coins = ?, last_active_ts = ? WHERE user_id = ?",
+            (new_val, self._now(), user_id),
+        )
         return new_val
 
     def add_corruption(self, user_id: int, amount: float) -> float:
         user = self.ensure_user(user_id)
         new_val = min(100.0, max(0.0, float(user["corruption"]) + amount))
-        self._execute("UPDATE users SET corruption = ? WHERE user_id = ?", (new_val, user_id))
+        self._execute(
+            "UPDATE users SET corruption = ?, last_active_ts = ? WHERE user_id = ?",
+            (new_val, self._now(), user_id),
+        )
         return new_val
 
     def set_corruption(self, user_id: int, amount: float) -> float:
         new_val = min(100.0, max(0.0, amount))
-        self._execute("UPDATE users SET corruption = ? WHERE user_id = ?", (new_val, user_id))
+        self._execute(
+            "UPDATE users SET corruption = ?, last_active_ts = ? WHERE user_id = ?",
+            (new_val, self._now(), user_id),
+        )
         return new_val
 
     def add_sanity(self, user_id: int, amount: float) -> float:
         user = self.ensure_user(user_id)
         new_val = min(100.0, max(0.0, float(user["sanity"]) + amount))
-        self._execute("UPDATE users SET sanity = ? WHERE user_id = ?", (new_val, user_id))
+        self._execute(
+            "UPDATE users SET sanity = ?, last_active_ts = ? WHERE user_id = ?",
+            (new_val, self._now(), user_id),
+        )
         return new_val
 
     def set_sanity(self, user_id: int, amount: float) -> float:
         new_val = min(100.0, max(0.0, amount))
-        self._execute("UPDATE users SET sanity = ? WHERE user_id = ?", (new_val, user_id))
+        self._execute(
+            "UPDATE users SET sanity = ?, last_active_ts = ? WHERE user_id = ?",
+            (new_val, self._now(), user_id),
+        )
         return new_val
 
     def touch_activity(self, user_id: int) -> int:
         """Record activity; increment active_days once per UTC day. Returns days."""
         user = self.ensure_user(user_id)
         today = self._today()
+        now = self._now()
         if user["last_activity_date"] != today:
             days = int(user["active_days"]) + 1
             self._execute(
-                "UPDATE users SET last_activity_date = ?, active_days = ? WHERE user_id = ?",
-                (today, days, user_id),
+                "UPDATE users SET last_activity_date = ?, active_days = ?, last_active_ts = ? "
+                "WHERE user_id = ?",
+                (today, days, now, user_id),
             )
             return days
+        self._execute("UPDATE users SET last_active_ts = ? WHERE user_id = ?", (now, user_id))
         return int(user["active_days"])
 
-    def can_digest_from_message(self, user_id: int) -> bool:
+    def touch_active(self, user_id: int) -> None:
+        """Update last_active_ts timestamp without ticking active_days."""
+        self.ensure_user(user_id)
+        self._execute("UPDATE users SET last_active_ts = ? WHERE user_id = ?", (self._now(), user_id))
+
+    def add_vc_minutes(self, user_id: int, minutes: int = 1) -> int:
+        """Increment voice channel presence minutes and refresh last_active_ts."""
+        user = self.ensure_user(user_id)
+        new_mins = int(user.get("vc_minutes") or 0) + minutes
+        now = self._now()
+        self._execute(
+            "UPDATE users SET vc_minutes = ?, last_active_ts = ? WHERE user_id = ?",
+            (new_mins, now, user_id),
+        )
+        return new_mins
+
+    def can_digest_from_message(self, user_id: int, cooldown: int | None = None) -> bool:
         """True if the activity cooldown has elapsed for digestion."""
         user = self.ensure_user(user_id)
-        return self._now() - float(user["last_digest_ts"]) >= int(
-            settings.get("activity_digest_cooldown", config.ACTIVITY_DIGEST_COOLDOWN)
-        )
+        if cooldown is None:
+            cooldown = int(
+                settings.get("activity_digest_cooldown", config.ACTIVITY_DIGEST_COOLDOWN)
+            )
+        return self._now() - float(user["last_digest_ts"]) >= cooldown
 
     def mark_digest(self, user_id: int) -> None:
-        self._execute("UPDATE users SET last_digest_ts = ? WHERE user_id = ?", (self._now(), user_id))
+        now = self._now()
+        self._execute(
+            "UPDATE users SET last_digest_ts = ?, last_active_ts = ? WHERE user_id = ?",
+            (now, now, user_id),
+        )
 
     def activity_tick(self, user_id: int, digestion: float, last_digest_ts: float,
                       active_days: int, last_activity_date: str) -> None:
-        """Apply one atomic activity tick (digestion + cooldown + active-days)."""
+        """Apply one atomic activity tick (digestion + cooldown + active-days + active_ts)."""
+        now = self._now()
         self._execute(
             "UPDATE users SET digestion = ?, last_digest_ts = ?, active_days = ?, "
-            "last_activity_date = ? WHERE user_id = ?",
-            (digestion, last_digest_ts, active_days, last_activity_date, user_id),
+            "last_activity_date = ?, last_active_ts = ? WHERE user_id = ?",
+            (digestion, last_digest_ts, active_days, last_activity_date, now, user_id),
         )
 
     def set_beyond_role(self, user_id: int, role_id: str | None) -> None:
@@ -264,13 +326,48 @@ class Database:
             "UPDATE users SET beyond_role_id = ? WHERE user_id = ?", (role_id, user_id)
         )
 
+    def update_decay_check(self, user_id: int, ts: float | None = None) -> None:
+        check_ts = self._now() if ts is None else ts
+        self._execute(
+            "UPDATE users SET last_decay_check_ts = ? WHERE user_id = ?",
+            (check_ts, user_id),
+        )
+
+    def demote_user_sequence(self, user_id: int) -> tuple[int, int] | None:
+        """Demote user by 1 sequence (capped at 9). Reset digestion, clear God slot & trials.
+
+        Returns (old_sequence, new_sequence) or None.
+        """
+        user = self.get_user(user_id)
+        if not user or user["pathway"] is None or user["sequence"] is None:
+            return None
+        old_seq = int(user["sequence"])
+        if old_seq >= 9:
+            # Already at Sequence 9, just reset digestion
+            self._execute(
+                "UPDATE users SET digestion = 0, last_demotion_ts = ? WHERE user_id = ?",
+                (self._now(), user_id),
+            )
+            return (old_seq, 9)
+        new_seq = old_seq + 1
+        pathway = user["pathway"]
+        now = self._now()
+        if old_seq == 0:
+            self.strip_god(pathway)
+        self.clear_trial(user_id)
+        self._execute(
+            "UPDATE users SET sequence = ?, digestion = 0, last_demotion_ts = ? WHERE user_id = ?",
+            (new_seq, now, user_id),
+        )
+        return (old_seq, new_seq)
+
     # --- corruption state -------------------------------------------------
     def set_corrupted(self, user_id: int, state: int, nickname_original: Optional[str] = None) -> None:
         self.ensure_user(user_id)
         self._execute(
-            "UPDATE users SET corrupted_state = ?, nickname_original = COALESCE(?, nickname_original) "
-            "WHERE user_id = ?",
-            (state, nickname_original, user_id),
+            "UPDATE users SET corrupted_state = ?, nickname_original = COALESCE(?, nickname_original), "
+            "last_active_ts = ? WHERE user_id = ?",
+            (state, nickname_original, self._now(), user_id),
         )
 
     def clear_corrupted(self, user_id: int) -> None:
@@ -327,61 +424,6 @@ class Database:
             (user_id, item_key),
         )
         return int(row["qty"]) if row else 0
-
-    # --- artifacts --------------------------------------------------------
-    def add_artifact(self, user_id: int, artifact_id: str, definition_key: Optional[str],
-                     name: str, grade: int, effect: str, curse: str) -> None:
-        self._execute(
-            "INSERT INTO artifacts (artifact_id, owner_id, definition_key, name, grade, "
-            "effect, curse, equipped, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
-            (artifact_id, user_id, definition_key, name, grade, effect, curse,
-             datetime.now(timezone.utc).isoformat()),
-        )
-
-    def get_artifact(self, artifact_id: str) -> Optional[Dict]:
-        return self._fetchone("SELECT * FROM artifacts WHERE artifact_id = ?", (artifact_id,))
-
-    def get_artifacts(self, user_id: int) -> List[Dict]:
-        return self._fetchall("SELECT * FROM artifacts WHERE owner_id = ?", (user_id,))
-
-    def get_equipped(self, user_id: int) -> Optional[Dict]:
-        return self._fetchone(
-            "SELECT * FROM artifacts WHERE owner_id = ? AND equipped = 1", (user_id,)
-        )
-
-    def equip_artifact(self, user_id: int, artifact_id: str) -> bool:
-        art = self.get_artifact(artifact_id)
-        if art is None or int(art["owner_id"]) != user_id:
-            return False
-        with self._lock, self._conn:
-            self._conn.execute(
-                "UPDATE artifacts SET equipped = 0 WHERE owner_id = ?", (user_id,)
-            )
-            self._conn.execute(
-                "UPDATE artifacts SET equipped = 1 WHERE artifact_id = ?", (artifact_id,)
-            )
-            self._conn.execute(
-                "UPDATE users SET equipped_artifact = ? WHERE user_id = ?",
-                (artifact_id, user_id),
-            )
-        return True
-
-    def unequip_artifact(self, user_id: int) -> Optional[str]:
-        art = self.get_equipped(user_id)
-        if art is None:
-            return None
-        self._execute(
-            "UPDATE artifacts SET equipped = 0 WHERE artifact_id = ?", (art["artifact_id"],)
-        )
-        self._execute("UPDATE users SET equipped_artifact = NULL WHERE user_id = ?", (user_id,))
-        return art["artifact_id"]
-
-    def delete_artifact(self, artifact_id: str) -> bool:
-        art = self.get_artifact(artifact_id)
-        if art is None:
-            return False
-        self._execute("DELETE FROM artifacts WHERE artifact_id = ?", (artifact_id,))
-        return True
 
     # --- oracle quotas ----------------------------------------------------
     def record_oracle_query(self, user_id: int) -> None:
@@ -475,6 +517,9 @@ class Database:
     def clear_trial(self, user_id: int) -> None:
         self._execute("DELETE FROM trials WHERE user_id = ?", (user_id,))
 
+    def all_trials(self) -> List[Dict]:
+        return self._fetchall("SELECT * FROM trials")
+
     # --- aggregate queries (madness engine / slot caps) -------------------
     def count_at_sequence(self, pathway_key: str, sequence: int) -> int:
         row = self._fetchone(
@@ -489,9 +534,10 @@ class Database:
     def corrupted_users(self) -> List[Dict]:
         return self._fetchall("SELECT * FROM users WHERE corrupted_state = 1")
 
-    def equipped_artifacts_all(self) -> List[Dict]:
+    def all_beyonders(self) -> List[Dict]:
+        """Return all users who have sworn fealty to a pathway."""
         return self._fetchall(
-            "SELECT a.* FROM artifacts a WHERE a.equipped = 1"
+            "SELECT * FROM users WHERE pathway IS NOT NULL AND sequence IS NOT NULL"
         )
 
     # --- daily & leaderboard ---------------------------------------------
@@ -502,13 +548,14 @@ class Database:
         if user.get("last_daily_date") == today:
             return False
         self._execute(
-            "UPDATE users SET last_daily_date = ? WHERE user_id = ?", (today, user_id)
+            "UPDATE users SET last_daily_date = ?, last_active_ts = ? WHERE user_id = ?",
+            (today, self._now(), user_id),
         )
         return True
 
     def leaderboard(self, limit: int = 10) -> List[Dict]:
         return self._fetchall(
-            "SELECT user_id, pathway, sequence, digestion, active_days FROM users "
+            "SELECT user_id, pathway, sequence, digestion, active_days, vc_minutes FROM users "
             "WHERE pathway IS NOT NULL AND sequence IS NOT NULL "
             "ORDER BY sequence ASC, digestion DESC, active_days DESC LIMIT ?",
             (limit,),

@@ -1,4 +1,4 @@
-"""Inventory, the market, and Sealed Artifact equip/unequip."""
+"""Inventory and player-to-player market trading."""
 from __future__ import annotations
 
 import discord
@@ -25,10 +25,21 @@ class EconomyCog(commands.Cog):
     # --- /inventory -------------------------------------------------------
     @app_commands.command(name="inventory")
     async def inventory(self, interaction: discord.Interaction) -> None:
-        """View your ingredients, formulas, characteristics, and artifacts."""
+        """View your ingredients, formulas, characteristics, and currencies."""
         row = self.db.ensure_user(interaction.user.id)
+        if row["pathway"] is None:
+            await interaction.response.send_message(
+                embed=persona.fog_embed(
+                    "Ordinary Mortal Pouch",
+                    "You are an ordinary mortal without Beyonder spirituality or ingredients.\n\n"
+                    "In this server, only members seeking power and authority brew and drink their Sequence 9 potion "
+                    "(`/pathway choose <pathway>`) to awaken as a Beyonder.",
+                ),
+                ephemeral=True,
+            )
+            return
+
         inv = self.db.get_inventory(interaction.user.id)
-        arts = self.db.get_artifacts(interaction.user.id)
 
         embed = persona.fog_embed(
             f"{interaction.user.display_name}'s Inventory",
@@ -60,18 +71,11 @@ class EconomyCog(commands.Cog):
                 inline=False,
             )
 
-        if arts:
-            art_lines = []
-            for a in arts:
-                marker = " **[equipped]**" if int(a["equipped"]) else ""
-                art_lines.append(f"`{a['artifact_id']}` {a['name']} (Grade {a['grade']}){marker}")
-            embed.add_field(name="Sealed Artifacts", value="\n".join(art_lines), inline=False)
-
-        if not formulas and not characteristics and not mats and not arts:
+        if not formulas and not characteristics and not mats:
             embed.add_field(
                 name="Empty",
-                value="Your satchel holds nothing but dust. Participate in raids and "
-                      "anomalies to gather ingredients.",
+                value="Your satchel holds nothing but dust. Participate in raids, anomalies, "
+                      "and the shop to gather ingredients.",
                 inline=False,
             )
         await interaction.response.send_message(embed=embed)
@@ -171,48 +175,6 @@ class EconomyCog(commands.Cog):
             _, pkey = key.split(":")
             return f"Uniqueness of {pathways.get_pathway(pkey)['name']}"
         return key
-
-    # --- /equip & /unequip ------------------------------------------------
-    @app_commands.command(name="equip")
-    @app_commands.describe(artifact_id="The Sealed Artifact's id (see /inventory).")
-    async def equip(self, interaction: discord.Interaction, artifact_id: str) -> None:
-        """Equip a Sealed Artifact — accepting its curse."""
-        art = self.db.get_artifact(artifact_id)
-        if art is None or int(art["owner_id"]) != interaction.user.id:
-            await interaction.response.send_message(
-                embed=persona.error_embed(
-                    f"You hold no Sealed Artifact with the id **{artifact_id}**."
-                ),
-                ephemeral=True,
-            )
-            return
-        self.db.equip_artifact(interaction.user.id, artifact_id)
-        await interaction.response.send_message(
-            embed=persona.success_embed(
-                "Artifact Equipped",
-                f"You have equipped **{art['name']}** (Grade {art['grade']}).\n"
-                f"*Perk:* {art['effect']}\n*Curse:* {art['curse']}\n\n"
-                f"The curse is now upon you. Seal it (`/unequip`) before you rest, lest "
-                f"it drain your sanity while you sleep.",
-            )
-        )
-
-    @app_commands.command(name="unequip")
-    async def unequip(self, interaction: discord.Interaction) -> None:
-        """Seal (unequip) your currently equipped Sealed Artifact."""
-        art_id = self.db.unequip_artifact(interaction.user.id)
-        if art_id is None:
-            await interaction.response.send_message(
-                embed=persona.error_embed("You have no Sealed Artifact equipped."),
-                ephemeral=True,
-            )
-            return
-        await interaction.response.send_message(
-            embed=persona.success_embed(
-                "Artifact Sealed",
-                f"The artifact **{art_id}** is sealed once more. Its curse recedes — for now.",
-            )
-        )
 
 
 async def setup(bot: commands.Bot) -> None:

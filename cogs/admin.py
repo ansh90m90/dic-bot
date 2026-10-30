@@ -1,21 +1,609 @@
 """Divine Authority — `/creator`, `/angel`, and `/moderator` command groups."""
 from __future__ import annotations
 
-import random
-import time
-
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 import config
 from data import ingredients, pathways
-from data.artifacts import get_artifact
 from utils import checks, persona
-from utils.roles import sync_beyonder_role
+from utils.roles import sync_beyonder_role, sync_all_guild_roles
 from db.database import Database
 from cogs.anomalies import EVENT_TYPES, trigger_anomaly
 from cogs.apotheosis import uniqueness_key
+
+
+def _progress_bar(val: float, max_val: float = 100.0, length: int = 8) -> str:
+    filled = int(round((max(0.0, min(max_val, val)) / max_val) * length))
+    return "█" * filled + "░" * (length - filled)
+
+
+class TreasuryCustomModal(discord.ui.Modal, title="Treasury — Custom Divine Grant"):
+    amount_input = discord.ui.TextInput(
+        label="Amount to Bestow",
+        placeholder="e.g. 10000",
+        min_length=1,
+        max_length=10,
+        required=True,
+    )
+    currency_input = discord.ui.TextInput(
+        label="Currency Type",
+        placeholder="Type 'gold' or 'tarot'",
+        default="gold",
+        min_length=4,
+        max_length=5,
+        required=True,
+    )
+    recipient_input = discord.ui.TextInput(
+        label="Recipient ID or @mention (Optional)",
+        placeholder="Leave blank to use selected member from console",
+        required=False,
+    )
+
+    def __init__(self, console_view: AngelConsoleView):
+        super().__init__()
+        self.console_view = console_view
+        if console_view.selected_user_id:
+            self.recipient_input.default = str(console_view.selected_user_id)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        raw_cur = self.currency_input.value.strip().lower()
+        if raw_cur not in ("gold", "tarot"):
+            await interaction.response.send_message(
+                embed=persona.error_embed("Currency must be either 'gold' or 'tarot'."),
+                ephemeral=True,
+            )
+            return
+
+        try:
+            amt = int(self.amount_input.value.strip().replace(",", ""))
+            if amt <= 0:
+                raise ValueError()
+        except ValueError:
+            await interaction.response.send_message(
+                embed=persona.error_embed("Amount must be a positive whole integer."),
+                ephemeral=True,
+            )
+            return
+
+        target_id = self.console_view.selected_user_id
+        raw_recip = self.recipient_input.value.strip()
+        if raw_recip:
+            cleaned = raw_recip.replace("<@", "").replace(">", "").replace("!", "")
+            if cleaned.isdigit():
+                target_id = int(cleaned)
+
+        if not target_id:
+            await interaction.response.send_message(
+                embed=persona.error_embed("No recipient specified. Please select a user or enter their ID."),
+                ephemeral=True,
+            )
+            return
+
+        self.console_view.selected_user_id = target_id
+        db = self.console_view.db
+        if raw_cur == "gold":
+            db.add_gold(target_id, amt)
+            cname = f"{amt:,} Gold Pounds"
+        else:
+            db.add_tarot(target_id, amt)
+            cname = f"{amt:,} Tarot Coins"
+
+        embed = self.console_view.build_current_embed()
+        self.console_view.update_components()
+        await interaction.response.edit_message(embed=embed, view=self.console_view)
+        await interaction.followup.send(
+            embed=persona.success_embed(
+                "Divine Treasury Boon",
+                f"Archangel Council has bestowed **{cname}** upon <@{target_id}>.",
+            ),
+            ephemeral=True,
+        )
+
+
+class RecipientUserSelect(discord.ui.UserSelect):
+    def __init__(self, console_view: AngelConsoleView):
+        super().__init__(
+            placeholder="Select a server member to grant currency...",
+            min_values=1,
+            max_values=1,
+            row=1,
+        )
+        self.console_view = console_view
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        selected_user = self.values[0]
+        self.console_view.selected_user_id = selected_user.id
+        embed = self.console_view.build_current_embed()
+        self.console_view.update_components()
+        await interaction.response.edit_message(embed=embed, view=self.console_view)
+
+
+class TrialSelect(discord.ui.Select):
+    def __init__(self, console_view: AngelConsoleView, trials: list[dict]):
+        options: list[discord.SelectOption] = []
+        for t in trials[:25]:
+            uid = int(t["user_id"])
+            user = console_view.bot.get_user(uid)
+            name = user.display_name if user else f"User {uid}"
+            t_seq = t["target_sequence"]
+            t_kind = t.get("trial_kind", "trial").capitalize()
+            options.append(
+                discord.SelectOption(
+                    label=f"{name[:25]} (Seq {t_seq})",
+                    value=str(uid),
+                    description=f"{t_kind} Trial",
+                    default=(console_view.selected_trial_user_id == uid),
+                )
+            )
+        super().__init__(
+            placeholder="Select a candidate to review or pass their trial...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=1,
+        )
+        self.console_view = console_view
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        self.console_view.selected_trial_user_id = int(self.values[0])
+        embed = self.console_view.build_current_embed()
+        self.console_view.update_components()
+        await interaction.response.edit_message(embed=embed, view=self.console_view)
+
+
+class AngelConsoleView(discord.ui.View):
+    def __init__(self, bot: commands.Bot, guild: discord.Guild, admin_id: int):
+        super().__init__(timeout=900.0)
+        self.bot = bot
+        self.guild = guild
+        self.admin_id = admin_id
+        self.current_tab = "overview"  # "overview" | "trials" | "treasury"
+        self.page = 0
+        self.page_size = 5
+        self.selected_user_id: int | None = None
+        self.selected_trial_user_id: int | None = None
+
+    @property
+    def db(self) -> Database:
+        return self.bot.db  # type: ignore[attr-defined]
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.guild is None:
+            return False
+        is_admin = interaction.user.guild_permissions.administrator
+        is_owner = (interaction.user.id == interaction.guild.owner_id)
+        if not (is_admin or is_owner or interaction.user.id == self.admin_id):
+            await interaction.response.send_message(
+                embed=persona.error_embed("Only Archangels (Administrators) may operate the Divine Console."),
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    def build_current_embed(self) -> discord.Embed:
+        if self.current_tab == "trials":
+            return self._build_trials_embed()
+        elif self.current_tab == "treasury":
+            return self._build_treasury_embed()
+        else:
+            return self._build_overview_embed()
+
+    def _build_overview_embed(self) -> discord.Embed:
+        beyonders = self.db.all_beyonders()
+        trials = self.db.all_trials()
+        total_beyonders = len(beyonders)
+        mortals = max(0, (self.guild.member_count or 0) - total_beyonders)
+
+        high_seq = [b for b in beyonders if int(b["sequence"]) <= 4]
+        mid_seq = [b for b in beyonders if 5 <= int(b["sequence"]) <= 7]
+        low_seq = [b for b in beyonders if int(b["sequence"]) >= 8]
+        mad_users = [b for b in beyonders if float(b.get("corruption", 0)) >= 50.0 or int(b.get("corrupted_state", 0)) == 1]
+
+        embed = persona.fog_embed(
+            "Archangel Divine Console — Beyonder Registry",
+            (
+                "Supernatural ledger of all awakened members, sequence ladders, and sanity metrics.\n\n"
+                f"• 👥 **Awakened Beyonders:** {total_beyonders} | 👤 **Ordinary Mortals:** {mortals}\n"
+                f"• 👑 **High Seq (0–4):** {len(high_seq)} | ⚡ **Mid Seq (5–7):** {len(mid_seq)} | 🌿 **Low Seq (8–9):** {len(low_seq)}\n"
+                f"• ⚠️ **Madness Alerts:** {len(mad_users)} afflicted | ⚔️ **Pending Trials:** {len(trials)}"
+            )
+        )
+
+        if not beyonders:
+            embed.add_field(
+                name="No Awakened Beyonders",
+                value="No server members have consumed an initial potion (`/pathway choose <pathway>`) yet. All remain ordinary mortals.",
+                inline=False,
+            )
+            return embed
+
+        sorted_beyonders = sorted(
+            beyonders,
+            key=lambda b: (int(b["sequence"]), -float(b.get("digestion", 0.0)), -int(b.get("active_days", 0)))
+        )
+
+        total_pages = max(1, (len(sorted_beyonders) + self.page_size - 1) // self.page_size)
+        self.page = max(0, min(self.page, total_pages - 1))
+        start_idx = self.page * self.page_size
+        page_items = sorted_beyonders[start_idx : start_idx + self.page_size]
+
+        for b in page_items:
+            uid = int(b["user_id"])
+            seq = int(b["sequence"])
+            path_key = b["pathway"]
+            p_info = pathways.get_pathway(path_key)
+            path_name = p_info["name"] if p_info else path_key.capitalize()
+            seq_title = pathways.sequence_name(path_key, seq)
+            digestion = float(b.get("digestion", 0.0))
+            sanity = float(b.get("sanity", 100.0))
+            corruption = float(b.get("corruption", 0.0))
+            gold = int(b.get("gold", 0))
+            tarot = int(b.get("tarot_coins", 0))
+            vc_mins = int(b.get("vc_minutes", 0))
+            vc_hrs = vc_mins / 60.0
+            active_days = int(b.get("active_days", 0))
+
+            if seq == 0:
+                badge = "👑 True Deity"
+            elif seq in (1, 2):
+                badge = "🪽 Archangel"
+            elif seq in (3, 4):
+                badge = "👁️ Demigod / Saint"
+            elif int(b.get("corrupted_state", 0)) == 1 or corruption >= 80.0:
+                badge = "🩸 Severe Madness"
+            elif corruption >= 50.0:
+                badge = "⚠️ Fog-Afflicted"
+            elif sanity <= 30.0:
+                badge = "🧠 Fractured Mind"
+            else:
+                badge = "✨ Stable"
+
+            bar = _progress_bar(digestion)
+            embed.add_field(
+                name=f"{badge} · <@{uid}> ({seq_title})",
+                value=(
+                    f"• **Pathway:** {path_name} (Sequence {seq})\n"
+                    f"• **Digestion:** `[{bar}]` {digestion:.1f}%\n"
+                    f"• **Madness:** Sanity {sanity:.0f}% · Corruption {corruption:.0f}%\n"
+                    f"• **Activity:** {vc_hrs:.1f}h VC logged · {active_days} active days\n"
+                    f"• **Wealth:** 🪙 {gold:,} Gold · 🎴 {tarot} Tarot Coins"
+                ),
+                inline=False,
+            )
+
+        embed.set_footer(text=f"Page {self.page + 1} of {total_pages} • Total Beyonders: {total_beyonders}")
+        return embed
+
+    def _build_trials_embed(self) -> discord.Embed:
+        trials = self.db.all_trials()
+        if not trials:
+            embed = persona.fog_embed(
+                "Advancement Trials Council",
+                (
+                    "**All Ascension Thresholds Clear.**\n\n"
+                    "No Beyonders are currently awaiting divine trial review.\n"
+                    "Members who satisfy their 100% digestion and ingredients at Sequence 4, 3, 2, 1, or 0 "
+                    "will appear here for Archangel adjudication."
+                )
+            )
+            return embed
+
+        embed = persona.fog_embed(
+            f"Advancement Trials Council ({len(trials)} Pending)",
+            (
+                "The following candidates have completed their potion digestion and acquired ritual ingredients. "
+                "They stand at the threshold awaiting the Archangel Council's adjudication.\n\n"
+                "Select a candidate below to inspect or pass their trial."
+            )
+        )
+
+        for t in trials:
+            uid = int(t["user_id"])
+            t_seq = int(t["target_sequence"])
+            t_kind = t.get("trial_kind", "ascension")
+            kind_label = {
+                "demigod": "Demigod Trial",
+                "angel": "Angel's Acting Trial",
+                "acting": "Acting Method Trial",
+                "apotheosis": "Sequence 0 Apotheosis",
+            }.get(t_kind, f"{t_kind.capitalize()} Trial")
+
+            user_row = self.db.get_user(uid)
+            path_key = user_row["pathway"] if user_row else "unknown"
+            p_info = pathways.get_pathway(path_key)
+            path_name = p_info["name"] if p_info else path_key
+            target_title = pathways.sequence_name(path_key, t_seq)
+
+            is_sel = (self.selected_trial_user_id == uid)
+            prefix = "👉 **[SELECTED CANDIDATE]**\n" if is_sel else ""
+
+            digestion = float(user_row.get("digestion", 100.0)) if user_row else 100.0
+            sanity = float(user_row.get("sanity", 100.0)) if user_row else 100.0
+            corruption = float(user_row.get("corruption", 0.0)) if user_row else 0.0
+            gold = int(user_row.get("gold", 0)) if user_row else 0
+            tarot = int(user_row.get("tarot_coins", 0)) if user_row else 0
+
+            embed.add_field(
+                name=f"⚔️ Target: {target_title} (Seq {t_seq}) — <@{uid}>",
+                value=(
+                    f"{prefix}"
+                    f"• **Pathway:** {path_name} | **Trial Type:** {kind_label}\n"
+                    f"• **Digestion:** {digestion:.1f}% | **Sanity:** {sanity:.0f}% | **Corruption:** {corruption:.0f}%\n"
+                    f"• **Holdings:** 🪙 {gold:,} Gold · 🎴 {tarot} Tarot Coins"
+                ),
+                inline=False,
+            )
+
+        embed.set_footer(text=f"{len(trials)} trials awaiting council action")
+        return embed
+
+    def _build_treasury_embed(self) -> discord.Embed:
+        embed = persona.fog_embed(
+            "Archangel Divine Treasury — Currency Distribution",
+            (
+                "Generate and grant **Gold Pounds** and **Tarot Coins** directly to any server member.\n"
+                "As an Archangel, your authority allows unrestricted treasury minting."
+            )
+        )
+
+        if self.selected_user_id:
+            row = self.db.ensure_user(self.selected_user_id)
+            target = self.guild.get_member(self.selected_user_id)
+            dname = target.display_name if target else f"User {self.selected_user_id}"
+            path_key = row.get("pathway")
+            seq = row.get("sequence")
+            if path_key and seq is not None:
+                rank_str = f"**{pathways.sequence_name(path_key, int(seq))}** (Sequence {seq})"
+            else:
+                rank_str = "*Ordinary Mortal (No Pathway)*"
+
+            gold = int(row.get("gold", 0))
+            tarot = int(row.get("tarot_coins", 0))
+
+            embed.add_field(
+                name="🎯 Selected Recipient",
+                value=(
+                    f"**Member:** <@{self.selected_user_id}> ({dname})\n"
+                    f"• **Rank:** {rank_str}\n"
+                    f"• **Vault Balance:** 🪙 **{gold:,}** Gold Pounds | 🎴 **{tarot:,}** Tarot Coins\n\n"
+                    f"*Click any preset grant button below for instant distribution, or click ✍️ Custom Grant.*"
+                ),
+                inline=False,
+            )
+        else:
+            embed.add_field(
+                name="🎯 Selected Recipient: None",
+                value=(
+                    "Select a recipient from the dropdown user menu below.\n"
+                    "Once selected, you can bestow Gold Pounds or Tarot Coins in a single click."
+                ),
+                inline=False,
+            )
+        return embed
+
+    def update_components(self) -> None:
+        self.clear_items()
+        trials = self.db.all_trials()
+        trial_count = len(trials)
+
+        # Tab Row (Row 0)
+        btn_overview = discord.ui.Button(
+            label="Beyonders Overview",
+            style=discord.ButtonStyle.success if self.current_tab == "overview" else discord.ButtonStyle.secondary,
+            emoji="📋",
+            row=0,
+        )
+        btn_overview.callback = self._on_overview_tab
+        self.add_item(btn_overview)
+
+        trial_btn_style = (
+            discord.ButtonStyle.danger if trial_count > 0 and self.current_tab == "trials"
+            else discord.ButtonStyle.primary if trial_count > 0
+            else discord.ButtonStyle.success if self.current_tab == "trials"
+            else discord.ButtonStyle.secondary
+        )
+        btn_trials = discord.ui.Button(
+            label=f"Trials ({trial_count})",
+            style=trial_btn_style,
+            emoji="⚖️",
+            row=0,
+        )
+        btn_trials.callback = self._on_trials_tab
+        self.add_item(btn_trials)
+
+        btn_treasury = discord.ui.Button(
+            label="Treasury Distribution",
+            style=discord.ButtonStyle.success if self.current_tab == "treasury" else discord.ButtonStyle.secondary,
+            emoji="💰",
+            row=0,
+        )
+        btn_treasury.callback = self._on_treasury_tab
+        self.add_item(btn_treasury)
+
+        btn_refresh = discord.ui.Button(
+            label="Refresh",
+            style=discord.ButtonStyle.secondary,
+            emoji="🔄",
+            row=0,
+        )
+        btn_refresh.callback = self._on_refresh
+        self.add_item(btn_refresh)
+
+        # Tab Specific Components
+        if self.current_tab == "overview":
+            beyonders = self.db.all_beyonders()
+            total_pages = max(1, (len(beyonders) + self.page_size - 1) // self.page_size)
+            if total_pages > 1:
+                btn_prev = discord.ui.Button(
+                    label="◀ Prev Page",
+                    style=discord.ButtonStyle.primary,
+                    disabled=(self.page <= 0),
+                    row=1,
+                )
+                btn_prev.callback = self._on_prev_page
+                self.add_item(btn_prev)
+
+                btn_next = discord.ui.Button(
+                    label="Next Page ▶",
+                    style=discord.ButtonStyle.primary,
+                    disabled=(self.page >= total_pages - 1),
+                    row=1,
+                )
+                btn_next.callback = self._on_next_page
+                self.add_item(btn_next)
+
+        elif self.current_tab == "trials":
+            if trials:
+                self.add_item(TrialSelect(self, trials))
+                btn_pass_one = discord.ui.Button(
+                    label="Pass Selected Trial",
+                    style=discord.ButtonStyle.success,
+                    emoji="⚔️",
+                    disabled=(self.selected_trial_user_id is None),
+                    row=2,
+                )
+                btn_pass_one.callback = self._on_pass_selected_trial
+                self.add_item(btn_pass_one)
+
+                btn_pass_all = discord.ui.Button(
+                    label=f"Pass All Trials ({len(trials)})",
+                    style=discord.ButtonStyle.primary,
+                    emoji="⚡",
+                    row=2,
+                )
+                btn_pass_all.callback = self._on_pass_all_trials
+                self.add_item(btn_pass_all)
+
+        elif self.current_tab == "treasury":
+            self.add_item(RecipientUserSelect(self))
+
+            btn_g1 = discord.ui.Button(label="+1,000 Gold", style=discord.ButtonStyle.secondary, emoji="🪙", row=2)
+            btn_g1.callback = lambda i, c="gold", a=1000: self._quick_grant(i, c, a)
+            self.add_item(btn_g1)
+
+            btn_g5 = discord.ui.Button(label="+5,000 Gold", style=discord.ButtonStyle.secondary, emoji="🪙", row=2)
+            btn_g5.callback = lambda i, c="gold", a=5000: self._quick_grant(i, c, a)
+            self.add_item(btn_g5)
+
+            btn_t10 = discord.ui.Button(label="+10 Tarot", style=discord.ButtonStyle.secondary, emoji="🎴", row=2)
+            btn_t10.callback = lambda i, c="tarot", a=10: self._quick_grant(i, c, a)
+            self.add_item(btn_t10)
+
+            btn_t50 = discord.ui.Button(label="+50 Tarot", style=discord.ButtonStyle.secondary, emoji="🎴", row=2)
+            btn_t50.callback = lambda i, c="tarot", a=50: self._quick_grant(i, c, a)
+            self.add_item(btn_t50)
+
+            btn_custom = discord.ui.Button(label="Custom Grant...", style=discord.ButtonStyle.primary, emoji="✍️", row=2)
+            btn_custom.callback = self._on_custom_grant
+            self.add_item(btn_custom)
+
+    async def _on_overview_tab(self, interaction: discord.Interaction) -> None:
+        self.current_tab = "overview"
+        embed = self.build_current_embed()
+        self.update_components()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def _on_trials_tab(self, interaction: discord.Interaction) -> None:
+        self.current_tab = "trials"
+        embed = self.build_current_embed()
+        self.update_components()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def _on_treasury_tab(self, interaction: discord.Interaction) -> None:
+        self.current_tab = "treasury"
+        embed = self.build_current_embed()
+        self.update_components()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def _on_refresh(self, interaction: discord.Interaction) -> None:
+        embed = self.build_current_embed()
+        self.update_components()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def _on_prev_page(self, interaction: discord.Interaction) -> None:
+        self.page = max(0, self.page - 1)
+        embed = self.build_current_embed()
+        self.update_components()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def _on_next_page(self, interaction: discord.Interaction) -> None:
+        self.page += 1
+        embed = self.build_current_embed()
+        self.update_components()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def _on_pass_selected_trial(self, interaction: discord.Interaction) -> None:
+        if not self.selected_trial_user_id:
+            await interaction.response.send_message(
+                embed=persona.error_embed("Please select a trial candidate first."),
+                ephemeral=True,
+            )
+            return
+        uid = self.selected_trial_user_id
+        self.db.clear_trial(uid)
+        self.selected_trial_user_id = None
+        embed = self.build_current_embed()
+        self.update_components()
+        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.followup.send(
+            embed=persona.success_embed(
+                "Trial Adjudicated",
+                f"Ascension trial passed for <@{uid}>! They may now run `/advance` to complete ascension.",
+            ),
+            ephemeral=True,
+        )
+
+    async def _on_pass_all_trials(self, interaction: discord.Interaction) -> None:
+        trials = self.db.all_trials()
+        if not trials:
+            await interaction.response.send_message(
+                embed=persona.error_embed("No pending trials to adjudicate."),
+                ephemeral=True,
+            )
+            return
+        for t in trials:
+            self.db.clear_trial(int(t["user_id"]))
+        self.selected_trial_user_id = None
+        embed = self.build_current_embed()
+        self.update_components()
+        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.followup.send(
+            embed=persona.success_embed(
+                "All Trials Passed",
+                f"Successfully adjudicated and passed all {len(trials)} pending trials! Candidates may now advance.",
+            ),
+            ephemeral=True,
+        )
+
+    async def _quick_grant(self, interaction: discord.Interaction, currency: str, amount: int) -> None:
+        if not self.selected_user_id:
+            await interaction.response.send_message(
+                embed=persona.error_embed("Please select a recipient member from the menu above first."),
+                ephemeral=True,
+            )
+            return
+        if currency == "gold":
+            self.db.add_gold(self.selected_user_id, amount)
+            label = f"{amount:,} Gold Pounds"
+        else:
+            self.db.add_tarot(self.selected_user_id, amount)
+            label = f"{amount:,} Tarot Coins"
+
+        embed = self.build_current_embed()
+        self.update_components()
+        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.followup.send(
+            embed=persona.success_embed(
+                "Treasury Bestowal",
+                f"Archangel Council has granted **{label}** to <@{self.selected_user_id}>.",
+            ),
+            ephemeral=True,
+        )
+
+    async def _on_custom_grant(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_modal(TreasuryCustomModal(self))
 
 
 class AdminCog(commands.Cog):
@@ -62,54 +650,24 @@ class AdminCog(commands.Cog):
             )
             return
         self.db.set_sequence(user.id, key, seq)
-        await sync_beyonder_role(self.db, user, key, seq)
+        role, error_diag = await sync_beyonder_role(
+            self.db, user, key, seq, guild=interaction.guild
+        )
         if seq == 0:
             self.db.set_god(key, user.id)
             self.db.add_item(user.id, uniqueness_key(key), 1)
-        title = pathways.sequence_name(key, seq)
-        await interaction.response.send_message(
-            embed=persona.success_embed(
-                "Divine Appointment",
-                f"By the word of the one Above the Sequences, **{user.display_name}** is "
-                f"now **{title}** (Sequence {seq}) upon the Path of "
-                f"**{pathways.get_pathway(key)['name']}**.",
-            )
-        )
 
-    @creator.command(name="artifact")
-    @app_commands.describe(
-        grade="Artifact grade (0 = divine, 3 = minor).",
-        effect="The artifact's perk (e.g. 'Triples digestion').",
-        target="Who receives the artifact (defaults to you).",
-    )
-    @checks.owner_only
-    async def creator_artifact_spawn(
-        self,
-        interaction: discord.Interaction,
-        grade: app_commands.Range[int, 0, 3],
-        effect: str,
-        target: discord.Member | None = None,
-    ) -> None:
-        """Create a new custom Sealed Artifact."""
-        recipient = target or interaction.user
-        artifact_id = f"CUSTOM-{random.randint(1000, 9999)}"
-        curse = {
-            0: "Drains 8 sanity per day; loss of control is inevitable without sealing.",
-            1: "Drains 5 sanity per day.",
-            2: "Drains 3 sanity per day.",
-            3: "Drains 1 sanity per day.",
-        }[grade]
-        self.db.add_artifact(
-            recipient.id, artifact_id, None, "Custom Sealed Artifact", grade, effect, curse
+        title = pathways.sequence_name(key, seq)
+        embed = persona.success_embed(
+            "Divine Appointment",
+            f"By the word of the one Above the Sequences, **{user.display_name}** is "
+            f"now **{title}** (Sequence {seq}) upon the Path of "
+            f"**{pathways.get_pathway(key)['name']}**.",
         )
-        await interaction.response.send_message(
-            embed=persona.success_embed(
-                "Artifact Forged",
-                f"A new Sealed Artifact has manifested: `{artifact_id}`\n"
-                f"**Grade:** {grade}  ·  **Perk:** {effect}  ·  **Curse:** {curse}\n"
-                f"Bestowed upon **{recipient.display_name}**.",
-            )
-        )
+        if error_diag:
+            embed.add_field(name="⚠️ Role Diagnostics", value=error_diag, inline=False)
+
+        await interaction.response.send_message(embed=embed)
 
     @creator.command(name="item")
     @app_commands.describe(
@@ -158,16 +716,21 @@ class AdminCog(commands.Cog):
         key = row["pathway"]
         self.db.strip_god(key)
         self.db.set_sequence(user.id, key, 1)
-        await sync_beyonder_role(self.db, user, key, 1)
-        self.db.remove_item(user.id, uniqueness_key(key), 1)
-        await interaction.response.send_message(
-            embed=persona.fog_embed(
-                "Uniqueness Stolen",
-                f"The one Above the Sequences has torn the **Uniqueness of "
-                f"{pathways.get_pathway(key)['name']}** from **{user.display_name}**, "
-                f"casting them back to Sequence 1.",
-            )
+        role, error_diag = await sync_beyonder_role(
+            self.db, user, key, 1, guild=interaction.guild
         )
+        self.db.remove_item(user.id, uniqueness_key(key), 1)
+
+        embed = persona.fog_embed(
+            "Uniqueness Stolen",
+            f"The one Above the Sequences has torn the **Uniqueness of "
+            f"{pathways.get_pathway(key)['name']}** from **{user.display_name}**, "
+            f"casting them back to Sequence 1.",
+        )
+        if error_diag:
+            embed.add_field(name="⚠️ Role Diagnostics", value=error_diag, inline=False)
+
+        await interaction.response.send_message(embed=embed)
 
     @creator.command(name="force-loss")
     @app_commands.describe(user="Whom to force into Loss of Control.")
@@ -188,6 +751,42 @@ class AdminCog(commands.Cog):
     # ======================================================================
     # ANGEL (admin)
     # ======================================================================
+    @angel.command(name="console")
+    @checks.admin_only
+    async def angel_console(self, interaction: discord.Interaction) -> None:
+        """Open the interactive Archangel Divine Console for Beyonders, trials, and treasury."""
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                embed=persona.error_embed("This console may only be manifested within a server."),
+                ephemeral=True,
+            )
+            return
+        view = AngelConsoleView(self.bot, guild, interaction.user.id)
+        embed = view.build_current_embed()
+        view.update_components()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @angel.command(name="sync-roles")
+    @checks.admin_only
+    async def angel_sync_roles(self, interaction: discord.Interaction) -> None:
+        """Resynchronize all Beyonder roles across the server and return execution metrics."""
+        guild = interaction.guild
+        if guild is None:
+            return
+        await interaction.response.defer(ephemeral=True)
+        metrics = await sync_all_guild_roles(self.bot, guild)
+        await interaction.followup.send(
+            embed=persona.success_embed(
+                "Role Synchronization Complete",
+                f"**Guild:** {guild.name}\n"
+                f"• **Successfully Synced:** {metrics['synced']} members\n"
+                f"• **Skipped:** {metrics['skipped']}\n"
+                f"• **Errors / Lacking Permissions:** {metrics['errors']}",
+            ),
+            ephemeral=True,
+        )
+
     @angel.command(name="bestow")
     @app_commands.describe(
         user="Whom to promote.",
@@ -221,12 +820,51 @@ class AdminCog(commands.Cog):
             )
             return
         self.db.set_sequence(user.id, key, seq)
-        await sync_beyonder_role(self.db, user, key, seq)
+        role, error_diag = await sync_beyonder_role(
+            self.db, user, key, seq, guild=interaction.guild
+        )
+        embed = persona.success_embed(
+            "Promotion",
+            f"**{user.display_name}** is raised to **{pathways.sequence_name(key, seq)}** "
+            f"(Sequence {seq}) upon the Path of **{pathways.get_pathway(key)['name']}**.",
+        )
+        if error_diag:
+            embed.add_field(name="⚠️ Role Diagnostics", value=error_diag, inline=False)
+
+        await interaction.response.send_message(embed=embed)
+
+    @angel.command(name="grant")
+    @app_commands.describe(
+        user="Whom to grant currency to.",
+        currency="Currency type: gold or tarot.",
+        amount="Amount to grant.",
+    )
+    @app_commands.choices(
+        currency=[
+            app_commands.Choice(name="Gold Pounds", value="gold"),
+            app_commands.Choice(name="Tarot Coins", value="tarot"),
+        ]
+    )
+    @checks.admin_only
+    async def angel_grant(
+        self, interaction: discord.Interaction, user: discord.Member, currency: str, amount: int
+    ) -> None:
+        """Generate and bestow Gold Pounds or Tarot Coins upon any member."""
+        if amount <= 0:
+            await interaction.response.send_message(
+                embed=persona.error_embed("Amount must be positive."), ephemeral=True
+            )
+            return
+        if currency == "gold":
+            self.db.add_gold(user.id, amount)
+            label = f"{amount:,} Gold Pounds"
+        else:
+            self.db.add_tarot(user.id, amount)
+            label = f"{amount:,} Tarot Coins"
         await interaction.response.send_message(
             embed=persona.success_embed(
-                "Promotion",
-                f"**{user.display_name}** is raised to **{pathways.sequence_name(key, seq)}** "
-                f"(Sequence {seq}) upon the Path of **{pathways.get_pathway(key)['name']}**.",
+                "Divine Treasury Boon",
+                f"The Archangel Council has bestowed **{label}** upon **{user.display_name}**.",
             )
         )
 
@@ -331,7 +969,7 @@ class AdminCog(commands.Cog):
             return
         if row["pathway"] is None or int(row["sequence"]) != 1:
             await interaction.response.send_message(
-                embed=persona.error_embed("Only a Sequence 1 may be crowned."),
+                embed=persona.error_embed("Only a Sequence 1 King of Angels may be crowned."),
                 ephemeral=True,
             )
             return
@@ -349,19 +987,56 @@ class AdminCog(commands.Cog):
             )
             return
 
+        char_key = ingredients.characteristic_key(key, 1)
+        if self.db.count_item(user.id, char_key) < 3:
+            await interaction.response.send_message(
+                embed=persona.error_embed("Apotheosis requires 3× Sequence 1 Characteristics."),
+                ephemeral=True,
+            )
+            return
+
+        # Check tarot coins, sanity, corruption requirements for Seq 0:
+        if int(row.get("tarot_coins", 0)) < 25:
+            await interaction.response.send_message(
+                embed=persona.error_embed("Apotheosis requires 25 Tarot Coins."),
+                ephemeral=True,
+            )
+            return
+        if float(row["sanity"]) < 90.0:
+            await interaction.response.send_message(
+                embed=persona.error_embed("Apotheosis demands Sanity ≥ 90%."),
+                ephemeral=True,
+            )
+            return
+        if float(row["corruption"]) > 10.0:
+            await interaction.response.send_message(
+                embed=persona.error_embed("Apotheosis demands Corruption ≤ 10%."),
+                ephemeral=True,
+            )
+            return
+
+        # Consume resources
+        self.db.add_tarot(user.id, -25)
+        self.db.remove_item(user.id, uniqueness_key(key), 1)
+        self.db.remove_item(user.id, char_key, 3)
+
         self.db.clear_trial(user.id)
         self.db.set_sequence(user.id, key, 0)
-        await sync_beyonder_role(self.db, user, key, 0)
-        self.db.set_god(key, user.id)
-        self.db.remove_item(user.id, uniqueness_key(key), 1)
-        await interaction.response.send_message(
-            embed=persona.success_embed(
-                "Apotheosis Complete",
-                f"**{user.display_name}** has ascended. They are now **"
-                f"{pathways.sequence_name(key, 0)}** — the one and only True God of the "
-                f"Path of **{pathways.get_pathway(key)['name']}**.",
-            )
+        role, error_diag = await sync_beyonder_role(
+            self.db, user, key, 0, guild=interaction.guild
         )
+        self.db.set_god(key, user.id)
+
+        embed = persona.success_embed(
+            "Apotheosis Complete",
+            f"**{user.display_name}** has ascended! They are now **"
+            f"{pathways.sequence_name(key, 0)}** — the True God of the "
+            f"Path of **{pathways.get_pathway(key)['name']}**.",
+        )
+        if error_diag:
+            embed.add_field(name="⚠️ Role Diagnostics", value=error_diag, inline=False)
+
+        await interaction.response.send_message(embed=embed)
 
     # ======================================================================
     # MODERATOR
@@ -379,37 +1054,6 @@ class AdminCog(commands.Cog):
                 "Sanity Warning",
                 f"**{user.display_name}** has drawn the fog's displeasure. "
                 f"Corruption rises to {new_c:.1f}%.",
-            )
-        )
-
-    @moderator.command(name="confiscate")
-    @app_commands.describe(user="Whose artifact to confiscate.", artifact_id="The artifact's id.")
-    @checks.mod_only
-    async def moderator_confiscate(
-        self, interaction: discord.Interaction, user: discord.Member, artifact_id: str
-    ) -> None:
-        """Confiscate a Grade 3 Sealed Artifact."""
-        art = self.db.get_artifact(artifact_id)
-        if art is None or int(art["owner_id"]) != user.id:
-            await interaction.response.send_message(
-                embed=persona.error_embed("That artifact does not belong to that member."),
-                ephemeral=True,
-            )
-            return
-        if int(art["grade"]) != 3:
-            await interaction.response.send_message(
-                embed=persona.error_embed("Moderators may only confiscate Grade 3 Artifacts."),
-                ephemeral=True,
-            )
-            return
-        if int(art["equipped"]):
-            self.db.unequip_artifact(user.id)
-        self.db.delete_artifact(artifact_id)
-        await interaction.response.send_message(
-            embed=persona.fog_embed(
-                "Artifact Confiscated",
-                f"The Grade 3 artifact **{art['name']}** (`{artifact_id}`) has been "
-                f"confiscated from **{user.display_name}**.",
             )
         )
 

@@ -1,10 +1,4 @@
-"""The Fool's Attendant — entry point.
-
-Normal mode runs the bot directly. With ``HA_ENABLED=true`` it runs in
-active–passive failover mode: a Firestore lease elects exactly one leader, and
-the SQLite DB is snapshotted to Firebase Cloud Storage so a standby can take
-over automatically.
-"""
+"""The Fool's Attendant — entry point."""
 from __future__ import annotations
 
 import asyncio
@@ -15,6 +9,7 @@ from discord.ext import commands
 
 import config
 from db.database import Database
+from utils.roles import sync_beyonder_role, sync_all_guild_roles
 
 COGS: tuple[str, ...] = (
     "progression",
@@ -35,6 +30,7 @@ class FoolsAttendant(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
+        intents.voice_states = True  # Required for voice channel digestion
         super().__init__(command_prefix="!", intents=intents)
         self.db = Database(config.DATABASE_PATH)
         self.tree.error(self._on_tree_error)
@@ -42,8 +38,29 @@ class FoolsAttendant(commands.Bot):
     async def _on_tree_error(
         self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError
     ) -> None:
-        # CheckFailures carry persona messages and are shown by discord.py.
         if isinstance(error, discord.app_commands.errors.CheckFailure):
+            msg = str(error) or "You lack the authority or Beyonder status to perform this action."
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        embed=discord.Embed(
+                            title="The Fog Rebuffs You",
+                            description=msg,
+                            color=0x7A1F2B,
+                        ),
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.followup.send(
+                        embed=discord.Embed(
+                            title="The Fog Rebuffs You",
+                            description=msg,
+                            color=0x7A1F2B,
+                        ),
+                        ephemeral=True,
+                    )
+            except discord.HTTPException:
+                pass
             return
         if isinstance(error, discord.app_commands.errors.CommandInvokeError):
             print(f"[The Fool's Attendant] Command error: {error.original!r}")
@@ -79,6 +96,25 @@ class FoolsAttendant(commands.Bot):
             print(f"[The Fool's Attendant] Synced {len(synced)} slash commands.")
         except discord.HTTPException as exc:
             print(f"[The Fool's Attendant] Command sync failed: {exc}")
+
+        # Synchronize Beyonder roles across all connected guilds
+        for guild in self.guilds:
+            try:
+                metrics = await sync_all_guild_roles(self, guild)
+                print(f"[The Fool's Attendant] Role sync for guild '{guild.name}': {metrics}")
+            except Exception as exc:
+                print(f"[The Fool's Attendant] Initial role sync error for '{guild.name}': {exc}")
+
+    async def on_member_join(self, member: discord.Member) -> None:
+        """Restore Beyonder role when an existing member rejoins the guild."""
+        if member.bot or not member.guild:
+            return
+        self.db.touch_active(member.id)
+        user = self.db.get_user(member.id)
+        if user and user.get("pathway") and user.get("sequence") is not None:
+            await sync_beyonder_role(
+                self.db, member, user["pathway"], int(user["sequence"]), guild=member.guild
+            )
 
     async def close(self) -> None:
         self.db.close()

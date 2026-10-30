@@ -11,16 +11,16 @@ primary_region = "iad"
 [build]
   dockerfile = "Dockerfile"
 
-# A single always-on worker process (a bot needs no HTTP service).
+# A single always-on worker process (a Discord bot needs no HTTP service).
 [processes]
   app = "python main.py"
 
 [env]
-  # Persist the SQLite database and settings on the mounted volume.
+  # Persist the SQLite database and settings on the mounted persistent volume.
   DATABASE_PATH = "/data/fools_attendant.db"
   SETTINGS_PATH = "/data/settings.json"
 
-# Mount a Fly volume at /data so state survives restarts and redeploys.
+# Mount a Fly persistent volume at /data so state survives restarts and redeploys.
 [mounts]
   source = "fools_data"
   destination = "/data"
@@ -29,3 +29,5 @@ primary_region = "iad"
   size = "shared-cpu-1x"
   memory = "512mb"
   processes = ["app"]
+  auto_stop_machines = false
+  auto_start_machines = true

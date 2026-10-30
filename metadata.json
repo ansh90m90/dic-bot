@@ -1,0 +1,8 @@
+{
+  "name": "The Fool's Attendant",
+  "description": "Lord of the Mysteries Beyonder progression, 22 Pathways, Tarot Club, Spirit World Anomalies, Madness engine, Voice Digestion, and Gemini-powered Mystical Oracle.",
+  "requestFramePermissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

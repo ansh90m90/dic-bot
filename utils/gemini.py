@@ -16,7 +16,7 @@ _GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}
 # Curated fallback bank (used only when the LLM is unreachable/unconfigured).
 _LOTM_KEYWORDS = (
     "pathway", "sequence", "beyonder", "potion", "digestion", "acting",
-    "sealed artifact", "tarot", "fool", "klein", "seer", "clown", "magician",
+    "tarot", "fool", "klein", "seer", "clown", "magician",
     "faceless", "marionettist", "bizarro sorcerer", "scholar of yore",
     "miracle invoker", "attendant of mysteries", "error", "door", "visionary",
     "hanged man", "white tower", "sun", "tyrant", "darkness", "death",
@@ -38,12 +38,12 @@ _FALLBACK_ANSWERS = {
         "The 22 Pathways are grouped under above-sequence beings: the Lord of the "
         "Mysteries (Fool, Error, Door), God Almighty (Visionary, Hanged Man, White "
         "Tower, Sun, Tyrant), Eternal Darkness (Darkness, Death, Twilight Giant), and "
-        "others. Choose one and swear fealty at Sequence 9."
+        "others. Choose one and swear fealty at Sequence 9 with `/pathway choose <name>`."
     ),
     "corruption": (
-        "Corruption accumulates from rule infractions, failed rituals, and the misuse "
-        "of Sealed Artifacts. When it grows too high, you suffer a Mental Breakdown: "
-        "your perks fail, your name twists into ravings, and the Fog of History may "
+        "Corruption accumulates from rule infractions, failed rituals, and prolonged "
+        "slumber. When it grows too high (≥80%), you suffer a Mental Breakdown: "
+        "your words twist into ravings, and the Fog of History may "
         "banish you until you are cleansed."
     ),
     "loss of control": (
@@ -51,10 +51,31 @@ _FALLBACK_ANSWERS = {
         "Beyonder characteristic overcomes the self. In this server it manifests as "
         "gibberish speech, Zalgo-distorted names, and temporary banishment to the Fog."
     ),
-    "sealed artifact": (
-        "Sealed Artifacts are equipable items of terrible power and terrible price. A "
-        "Grade 1 artifact may double your digestion, yet devour one in ten of your "
-        "messages and drip corruption into you each day. Seal them before you rest."
+    "voice": (
+        "Voice channels (VC) are the dominant engine of potion digestion! Being active "
+        "in VC awards continuous digestion ticks every 60 seconds (Sequence 9 requires 72 hours "
+        "of continuous VC). Remaining unmuted in a channel with other members grants an additional +25% bonus."
+    ),
+    "mortal": (
+        "Members join as ordinary mortals without powers or Beyonder commands. "
+        "Only members who wish to acquire supernatural authority, advance through the sequences, "
+        "and potentially rise to high ranks (Demigods, Angels, or Server Admins) brew and drink their "
+        "Sequence 9 potion using `/pathway choose <pathway>`. Mortals cannot use Beyonder abilities."
+    ),
+    "brew": (
+        "To brew and drink your initial potion and awaken as a Beyonder, run `/pathway choose <pathway_name>`. "
+        "To brew higher sequence potions, you must acquire the target sequence formula, ingredients, and "
+        "characteristic from the shop or bounties, reach 100% digestion, and run `/advance`."
+    ),
+    "power": (
+        "Ascending through the sequences grants elevated prestige, hoisted Discord roles (Sequence 4–0), "
+        "access to Archangel adjudication, and true godhood at Sequence 0. Mortals hold no powers until they "
+        "choose to brew and drink their potion."
+    ),
+    "backlash": (
+        "Advancement rituals carry risk (5% at Seq 8 up to 40% at Seq 1). High sanity reduces backlash risk, "
+        "while corruption increases it. On backlash failure, ingredients, gold, and formulas are consumed, "
+        "and you suffer severe digestion, sanity, and corruption penalties."
     ),
 }
 
@@ -67,7 +88,7 @@ def _fallback_answer(question: str) -> str:
     if any(k in lowered for k in _LOTM_KEYWORDS):
         return (
             "The gray fog parts but a little. Ask of a specific pathway, sequence, "
-            "Sealed Artifact, or the corruption that gnaws at Beyonders, and the "
+            "acting method, or the corruption that gnaws at Beyonders, and the "
             "Spirit World shall answer more precisely."
         )
     return ORACLE_REFUSAL

@@ -76,8 +76,9 @@ TAROT_ROLE: str = os.getenv("TAROT_ROLE", "Tarot Club")
 STARTING_GOLD: int = _as_int(os.getenv("STARTING_GOLD"), 100)
 
 # --- Progression / digestion ---------------------------------------------
-ACTIVITY_DIGEST_COOLDOWN: int = _as_int(os.getenv("ACTIVITY_DIGEST_COOLDOWN"), 120)
-DIGEST_PER_MESSAGE: float = _as_float(os.getenv("DIGEST_PER_MESSAGE"), 2.0)
+ACTIVITY_DIGEST_COOLDOWN: int = _as_int(os.getenv("ACTIVITY_DIGEST_COOLDOWN"), 180)
+DIGEST_PER_MESSAGE: float = _as_float(os.getenv("DIGEST_PER_MESSAGE"), 1.0)
+MIN_DIGEST_MESSAGE_LEN: int = _as_int(os.getenv("MIN_DIGEST_MESSAGE_LEN"), 15)
 
 # --- Madness engine -------------------------------------------------------
 CORRUPTION_BREAKDOWN_THRESHOLD: float = _as_float(
@@ -85,9 +86,6 @@ CORRUPTION_BREAKDOWN_THRESHOLD: float = _as_float(
 )
 GIBBERISH_CORRUPTION: float = _as_float(os.getenv("GIBBERISH_CORRUPTION"), 60.0)
 FOG_TIMEOUT_MINUTES: int = _as_int(os.getenv("FOG_TIMEOUT_MINUTES"), 10)
-ARTIFACT_OFFLINE_SANITY_DRAIN: float = _as_float(
-    os.getenv("ARTIFACT_OFFLINE_SANITY_DRAIN"), 5.0
-)
 
 # --- Anomalies ------------------------------------------------------------
 ANOMALY_MIN_INTERVAL: int = _as_int(os.getenv("ANOMALY_MIN_INTERVAL"), 3600)

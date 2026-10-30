@@ -2,16 +2,31 @@
 
 This is the single source of truth for pathway lore used across the bot. Each
 pathway holds its Sequence 9 -> Sequence 0 ladder, its group, and the
-above-sequence being it ultimately belongs to. Tweak names here and every
-command follows automatically.
-
-Sequence ladders use the widely circulated English translations. The `name` of
-each pathway is the sequence-0 title; the `sequences` map is keyed by sequence
-number (9 down to 0).
+above-sequence being it ultimately belongs to.
 """
 from __future__ import annotations
 
+import math
 from typing import Dict, List
+
+# Digestion multipliers per Sequence.
+# Calibrated so Sequence 9 takes 72 hours (3 continuous days = 4,320 mins) of VC activity.
+# Sequence 2 takes 480 hours (8 months @ 2 hours/day = 28,800 mins) of VC activity.
+BASE_VC_MINUTES_SEQ9 = 4320.0  # 72 hours = 3 continuous days
+BASE_VC_MINUTES_SEQ2 = 28800.0  # 480 hours = 240 days (8 months) * 2 hours
+
+DIGESTION_MULTIPLIERS: Dict[int, float] = {
+    9: 1.0,      # 72h continuous VC = 100%
+    8: 0.720,    # 100h total VC
+    7: 0.480,    # 150h total VC
+    6: 0.327,    # 220h total VC
+    5: 0.240,    # 300h total VC
+    4: 0.189,    # 380h total VC
+    3: 0.164,    # 440h total VC
+    2: 0.150,    # 480h total VC = 8 months @ 2h/day
+    1: 0.120,    # 600h total VC = 10+ months
+    0: 0.0,
+}
 
 # group key -> ordered list of pathway keys
 GROUPS: Dict[str, List[str]] = {
@@ -275,13 +290,11 @@ def resolve_pathway(name: str) -> str | None:
         target = target[4:]
     if target in PATHWAYS:
         return target
-    # Try matching the display name and the sequence-0 title of each pathway.
     for key, data in PATHWAYS.items():
         if data["name"].lower().replace(" ", "_") == target:
             return key
         if data["sequences"][0].lower().replace(" ", "_") == target:
             return key
-    # Contains-match as a last resort.
     for key, data in PATHWAYS.items():
         if target in key or target in data["name"].lower():
             return key
@@ -308,6 +321,8 @@ def rank_title(sequence: int) -> str:
         return "Saint"
     if 5 <= sequence <= 7:
         return "Beyonder"
+    if sequence == 8:
+        return "Initiate"
     return "Mortal"
 
 
@@ -328,56 +343,177 @@ def address(sequence: int) -> str:
     return "Mortal"
 
 
-def advancement_requirements(target_sequence: int) -> Dict:
-    """Return requirements to advance *into* ``target_sequence`` (8..0).
+def estimated_ascension_time(current_sequence: int, current_digestion: float) -> str:
+    """Calculate an estimated remaining time to advance.
 
-    ``target_sequence`` is the sequence the Beyonder is ascending TO.
-    A potion *formula* and a *Beyonder characteristic* for that sequence are
-    always required on top of these (enforced in the /advance command).
+    Pads the estimate by ~30% over ideal continuous time to cover irregular logins,
+    daily breaks, and real-world variance.
     """
+    if current_sequence <= 0:
+        return "Apex Reached"
+
+    remaining_percent = max(0.0, 100.0 - current_digestion)
+    if remaining_percent <= 0:
+        return "Ready for Ascension"
+
+    mult = DIGESTION_MULTIPLIERS.get(current_sequence, 1.0)
+    if mult <= 0:
+        return "Ready for Ascension"
+
+    # Base continuous minutes at 100% digestion
+    total_minutes_needed = BASE_VC_MINUTES_SEQ9 / mult
+    rem_minutes = total_minutes_needed * (remaining_percent / 100.0)
+
+    # Apply 1.30x buffer for real-world irregular activity
+    buffered_minutes = rem_minutes * 1.30
+    buffered_hours = buffered_minutes / 60.0
+
+    # Human-readable formatting tailored to play patterns
+    if current_sequence == 9:
+        # At Seq 9, 3 days continuous = 72h. Buffered is ~4-5 days.
+        days = buffered_hours / 24.0
+        return f"~{math.ceil(days)}–{math.ceil(days) + 1} Days (Active VC)"
+    elif current_sequence in (8, 7):
+        days = buffered_hours / 12.0  # assuming ~12 hours active presence a day
+        return f"~{math.ceil(days)}–{math.ceil(days) + 2} Days"
+    elif current_sequence in (6, 5):
+        weeks = (buffered_hours / 4.0) / 7.0  # assuming ~4h active a day
+        return f"~{max(1, round(weeks))}–{max(2, round(weeks) + 1)} Weeks"
+    elif current_sequence in (4, 3):
+        months = (buffered_hours / 3.0) / 30.0  # assuming ~3h active a day
+        return f"~{max(1, round(months, 1))}–{round(months + 1, 1)} Months"
+    elif current_sequence == 2:
+        # User specified: Seq 2 to 1 takes ~8 months @ 2 hours/day. Buffered = ~8–9 months.
+        months = (buffered_hours / 2.0) / 30.0
+        return f"~{max(1, round(months, 1))}–{round(months + 1, 1)} Months"
+    else:  # Sequence 1
+        months = (buffered_hours / 2.0) / 30.0
+        return f"~{max(1, round(months, 1))}–{round(months + 1, 1)} Months"
+
+
+def advancement_requirements(target_sequence: int) -> Dict:
+    """Return requirements to advance *into* ``target_sequence`` (8..0)."""
     req: Dict = {
         "gold": 0,
+        "tarot": 0,
+        "characteristics": 1,
+        "char_sequence": target_sequence,
         "ingredients": {},   # rarity -> count
         "min_active_days": 0,
+        "min_sanity": 0.0,
+        "max_corruption": 100.0,
+        "hazard_percent": 0.0,
         "trial": None,       # trial key or None
         "slot_capped": False,
+        "max_slots": None,
         "apotheosis": False,
     }
+
     if target_sequence == 0:
-        req["apotheosis"] = True
+        req.update({
+            "gold": 0,
+            "tarot": 25,
+            "characteristics": 3,
+            "char_sequence": 1,
+            "min_sanity": 90.0,
+            "max_corruption": 10.0,
+            "apotheosis": True,
+        })
         return req
 
-    req["gold"] = {
-        8: 50, 7: 100, 6: 250, 5: 500, 4: 1500,
-        3: 4000, 2: 10000, 1: 25000,
-    }.get(target_sequence, 0)
-
-    if target_sequence >= 8:
-        req["ingredients"]["common"] = 1
-    elif target_sequence >= 7:
-        req["ingredients"]["common"] = 2
-    elif target_sequence >= 5:
-        req["ingredients"]["common"] = 3
-        req["ingredients"]["uncommon"] = 2
+    if target_sequence == 8:
+        req.update({
+            "gold": 150,
+            "tarot": 0,
+            "ingredients": {"common": 2, "uncommon": 1},
+            "min_active_days": 3,
+            "min_sanity": 60.0,
+            "max_corruption": 50.0,
+            "hazard_percent": 5.0,
+        })
+    elif target_sequence == 7:
+        req.update({
+            "gold": 400,
+            "tarot": 1,
+            "ingredients": {"common": 3, "uncommon": 2},
+            "min_active_days": 7,
+            "min_sanity": 65.0,
+            "max_corruption": 45.0,
+            "hazard_percent": 10.0,
+        })
+    elif target_sequence == 6:
+        req.update({
+            "gold": 1000,
+            "tarot": 2,
+            "ingredients": {"common": 4, "uncommon": 3, "rare": 1},
+            "min_active_days": 15,
+            "min_sanity": 70.0,
+            "max_corruption": 40.0,
+            "hazard_percent": 15.0,
+        })
+    elif target_sequence == 5:
+        req.update({
+            "gold": 2500,
+            "tarot": 4,
+            "ingredients": {"common": 5, "uncommon": 4, "rare": 2},
+            "min_active_days": 30,
+            "min_sanity": 75.0,
+            "max_corruption": 35.0,
+            "hazard_percent": 20.0,
+            "trial": "acting",
+        })
     elif target_sequence == 4:
-        req["ingredients"]["common"] = 3
-        req["ingredients"]["uncommon"] = 3
-        req["ingredients"]["rare"] = 1
-        req["min_active_days"] = 30
-        req["trial"] = "demigod"
+        req.update({
+            "gold": 7500,
+            "tarot": 8,
+            "ingredients": {"common": 5, "uncommon": 5, "rare": 3, "legendary": 1},
+            "min_active_days": 60,
+            "min_sanity": 80.0,
+            "max_corruption": 25.0,
+            "hazard_percent": 25.0,
+            "trial": "demigod",
+        })
     elif target_sequence == 3:
-        req["ingredients"]["uncommon"] = 4
-        req["ingredients"]["rare"] = 2
-        req["ingredients"]["legendary"] = 1
-        req["trial"] = "demigod"
+        req.update({
+            "gold": 20000,
+            "tarot": 15,
+            "ingredients": {"uncommon": 6, "rare": 4, "legendary": 2},
+            "min_active_days": 100,
+            "min_sanity": 85.0,
+            "max_corruption": 20.0,
+            "hazard_percent": 30.0,
+            "trial": "demigod",
+        })
     elif target_sequence == 2:
-        req["ingredients"]["rare"] = 3
-        req["ingredients"]["legendary"] = 2
-        req["min_active_days"] = 90
-        req["trial"] = "angel"
+        req.update({
+            "gold": 55000,
+            "tarot": 30,
+            "characteristics": 2,
+            "char_sequence": 2,
+            "ingredients": {"rare": 6, "legendary": 4},
+            "min_active_days": 160,
+            "min_sanity": 88.0,
+            "max_corruption": 15.0,
+            "hazard_percent": 35.0,
+            "trial": "angel",
+            "slot_capped": True,
+            "max_slots": 6,
+        })
     elif target_sequence == 1:
-        req["ingredients"]["legendary"] = 3
-        req["min_active_days"] = 180
-        req["trial"] = "acting"
-        req["slot_capped"] = True
+        # Advancing from Seq 2 into Seq 1: 8 months of daily VC (at least 2h/day)
+        req.update({
+            "gold": 150000,
+            "tarot": 60,
+            "characteristics": 3,
+            "char_sequence": 1,
+            "ingredients": {"rare": 8, "legendary": 6},
+            "min_active_days": 240,  # 8 months of daily activity
+            "min_sanity": 92.0,
+            "max_corruption": 10.0,
+            "hazard_percent": 40.0,
+            "trial": "acting",
+            "slot_capped": True,
+            "max_slots": 3,
+        })
+
     return req

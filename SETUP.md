@@ -221,6 +221,106 @@ Recent activity up to ~2 minutes old can be lost if a PC is force‑killed.
 
 ---
 
+## Deploying 24/7 on Fly.io (100% Free Forever Guide)
+
+Fly.io provides a generous **Hobby Free Tier** that can run this bot 24/7 for **$0.00 / month**. Because Discord bots communicate via outbound WebSockets, they **do not require inbound HTTP services or public IPv4 addresses** (which is what usually incurs charges on other services).
+
+### Free Tier Resource Budget vs Bot Consumption:
+| Resource | Fly.io Free Allowance | The Fool's Attendant Uses | Status |
+|---|---|---|---|
+| **VM Machines** | Up to 3 shared-cpu-1x machines | **1 shared-cpu-1x (512MB RAM)** | Fully Free (1/3 of allowance) |
+| **Persistent NVMe Volume** | Up to 3 GB across org | **1 GB volume (`fools_data`)** | Fully Free (1/3 of allowance) |
+| **Public IPv4 Address** | None (Costs $2.00/mo) | **0 IPv4 allocated** | Fully Free ($0.00) |
+| **Outbound Bandwidth** | 100 GB / month free | **< 1 GB / month** (Discord gateway) | Fully Free |
+| **Monthly Total** | $0.00 | **$0.00** | **100% Free** |
+
+---
+
+### Critical $0.00 Guardrails:
+1. **NEVER run `fly ips allocate-v4`**: Public IPv4 addresses cost $2.00/month. Discord bots connect outbound directly to Discord gateway servers and do not need any public IP.
+2. **NO `[http_service]`**: The included `fly.toml` has no HTTP listener configured, so Fly won't attempt to expose web ports.
+3. **Volume size must be 1 GB**: Use `--size 1` when creating the volume.
+4. **Machine count must be 1**: Ensure only 1 VM machine runs.
+
+---
+
+### Step-by-Step Free Deployment:
+
+#### 1. Install flyctl
+- **Windows (PowerShell)**:
+  ```powershell
+  pwsh -Command "iwr https://fly.io/install.ps1 -useb | iex"
+  ```
+  *(If using standard Windows PowerShell, run: `iwr https://fly.io/install.ps1 -useb | iex`)*
+- **macOS / Linux**:
+  ```bash
+  curl -L https://fly.io/install.sh | sh
+  ```
+
+#### 2. Create your Fly.io Account & Log in
+```bash
+fly auth login
+```
+*Note: Fly.io requires a credit or debit card during registration purely for anti-abuse and identity verification. As long as you follow the guardrails below, your monthly bill will strictly be **$0.00**.*
+
+#### 3. Pick a Unique App Name in `fly.toml`
+Open `fly.toml` in your text editor. Change line 8 to your own unique name (lowercase, numbers, and hyphens):
+```toml
+app = "my-fools-attendant-server"
+primary_region = "iad"
+```
+*(Regions: `iad` = Virginia/US East, `ord` = Chicago, `fra` = Frankfurt, `sin` = Singapore, `syd` = Sydney. Pick whichever is closest to you or your Discord server.)*
+
+#### 4. Register the App on Fly (without deploying yet)
+In PowerShell or terminal inside the bot folder:
+```bash
+fly apps create my-fools-attendant-server
+```
+*(Replace `my-fools-attendant-server` with the exact name you set in `fly.toml`)*
+
+#### 5. Create the 1 GB Free Persistent Volume
+This stores your SQLite database (`/data/fools_attendant.db`) and server settings safely across updates:
+```bash
+fly volumes create fools_data --region iad --size 1
+```
+*(Fly will ask to confirm creating 1 GB volume in the selected region. Press Enter to confirm.)*
+
+#### 6. Store Your Discord Token and Gemini Key as Encrypted Secrets
+Secrets are injected into the container environment securely without putting them in code:
+```bash
+fly secrets set DISCORD_TOKEN="your_discord_bot_token_here" GEMINI_API_KEY="your_optional_gemini_key_here"
+```
+
+#### 7. Deploy the Bot
+```bash
+fly deploy
+```
+Fly.io will build the container using `Dockerfile` and start 1 machine running `python main.py`.
+
+#### 8. Verify Machine Count & Status
+Ensure exactly 1 machine is running:
+```bash
+fly scale count 1
+fly status
+```
+
+#### 9. Check the Live Logs
+```bash
+fly logs
+```
+You should see:
+```text
+[The Fool's Attendant] Logged in as Fool's Attendant#xxxx
+[The Fool's Attendant] Synced 20 slash commands.
+```
+
+---
+
+### How to Verify Your $0.00 Free Bill:
+1. Run `fly dashboard` or visit [https://fly.io/dashboard](https://fly.io/dashboard).
+2. Go to **Billing**.
+3. Under Current Usage, you will see your 1 shared CPU machine (under 2,340 free hours) and 1 GB volume (under 3 GB free limit). Current balance and upcoming invoice will show **$0.00**.
+
 ## Run in background & start on boot
 
 Three helper files do this:

@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from data import pathways
+from data import ingredients, pathways
 from utils import persona
 from db.database import Database
 
@@ -53,11 +53,31 @@ class ApotheosisCog(commands.Cog):
             )
             return
 
-        if self.db.count_item(interaction.user.id, uniqueness_key(pathway_key)) < 1:
+        # Verification of full Apotheosis requirements:
+        failures = []
+        if float(row["digestion"]) < 100.0:
+            failures.append(f"Digestion at {float(row['digestion']):.1f}% (demands 100%)")
+        if float(row["sanity"]) < 90.0:
+            failures.append(f"Sanity ≥ 90.0% (current: {float(row['sanity']):.1f}%)")
+        if float(row["corruption"]) > 10.0:
+            failures.append(f"Corruption ≤ 10.0% (current: {float(row['corruption']):.1f}%)")
+        if int(row.get("tarot_coins", 0)) < 25:
+            failures.append(f"25 Tarot Coins (you hold {int(row.get('tarot_coins', 0))})")
+
+        u_key = uniqueness_key(pathway_key)
+        if self.db.count_item(interaction.user.id, u_key) < 1:
+            failures.append(f"the **Uniqueness of {data['name']}**")
+
+        char_key = ingredients.characteristic_key(pathway_key, 1)
+        held_char = self.db.count_item(interaction.user.id, char_key)
+        if held_char < 3:
+            failures.append(f"3× Sequence 1 Characteristics (you hold {held_char})")
+
+        if failures:
             await interaction.response.send_message(
                 embed=persona.error_embed(
-                    f"You do not hold the **Uniqueness of {data['name']}**. Only by "
-                    f"wielding the Pathway's Uniqueness may you ascend."
+                    "The Uniqueness rejects your call. You lack the divine prerequisites:\n"
+                    + "\n".join(f"• {f}" for f in failures)
                 ),
                 ephemeral=True,
             )
