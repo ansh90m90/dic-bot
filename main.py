@@ -2,7 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
+
+# Ensure local libs directory is in sys.path for container panel hosts
+for p in (os.path.abspath("./libs"), os.path.abspath(".")):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 import discord
 from discord.ext import commands
