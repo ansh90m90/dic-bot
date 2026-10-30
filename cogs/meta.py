@@ -159,6 +159,148 @@ _HELP_SUBTOPICS = {
 }
 
 
+class OracleDoubtModal(discord.ui.Modal, title="Spirit World Oracle — Ask Doubts"):
+    inquiry = discord.ui.TextInput(
+        label="What doubt burdens your mind?",
+        style=discord.TextStyle.paragraph,
+        placeholder="Ask about Pathways, Potions, Voice Digestion, Ritual Backlash, or Server Rules...",
+        required=True,
+        max_length=600,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        from utils.gemini import ask_oracle
+
+        question = self.inquiry.value.strip()
+        answer = await ask_oracle(question)
+
+        embed = persona.fog_embed(
+            "The Spirit World Oracle Whispers",
+            f"**Inquiry:** *\"{question}\"*\n\n{answer}",
+        )
+        embed.set_footer(text="The Fool's Attendant · Divine AI Oracle")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+class HelpNavigationView(discord.ui.View):
+    def __init__(self, cog: Any):
+        super().__init__(timeout=300)
+        self.cog = cog
+
+    @discord.ui.button(label="Overview", style=discord.ButtonStyle.primary, row=0, emoji="📜")
+    async def btn_overview(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        embed = self.cog._build_index_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Lore & Sanity", style=discord.ButtonStyle.secondary, row=0, emoji="🔮")
+    async def btn_mechanics(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        sub = _HELP_SUBTOPICS["mechanics"]
+        embed = persona.fog_embed(sub["title"], sub["description"])
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Progression", style=discord.ButtonStyle.secondary, row=0, emoji="⚡")
+    async def btn_progression(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        sub = _HELP_SUBTOPICS["progression"]
+        embed = persona.fog_embed(sub["title"], sub["description"])
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Voice XP", style=discord.ButtonStyle.secondary, row=0, emoji="🎙️")
+    async def btn_voice(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        sub = _HELP_SUBTOPICS["voice"]
+        embed = persona.fog_embed(sub["title"], sub["description"])
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Economy", style=discord.ButtonStyle.secondary, row=1, emoji="💰")
+    async def btn_economy(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        sub = _HELP_SUBTOPICS["economy"]
+        embed = persona.fog_embed(sub["title"], sub["description"])
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Tarot Club", style=discord.ButtonStyle.secondary, row=1, emoji="👁️")
+    async def btn_tarot(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        sub = _HELP_SUBTOPICS["tarot"]
+        embed = persona.fog_embed(sub["title"], sub["description"])
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Trials & Caps", style=discord.ButtonStyle.secondary, row=1, emoji="⚔️")
+    async def btn_trials(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        sub = _HELP_SUBTOPICS["trials"]
+        embed = persona.fog_embed(sub["title"], sub["description"])
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Slumber Decay", style=discord.ButtonStyle.secondary, row=1, emoji="⏳")
+    async def btn_inactivity(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        sub = _HELP_SUBTOPICS["inactivity"]
+        embed = persona.fog_embed(sub["title"], sub["description"])
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Roles", style=discord.ButtonStyle.secondary, row=2, emoji="👑")
+    async def btn_roles(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        sub = _HELP_SUBTOPICS["roles"]
+        embed = persona.fog_embed(sub["title"], sub["description"])
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Admin Tools", style=discord.ButtonStyle.secondary, row=2, emoji="🛡️")
+    async def btn_admin(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        sub = _HELP_SUBTOPICS["admin"]
+        embed = persona.fog_embed(sub["title"], sub["description"])
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Ask Oracle (AI Doubts)", style=discord.ButtonStyle.success, row=2, emoji="✨")
+    async def btn_ai_doubts(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(OracleDoubtModal())
+
+
+def _collect_tree_commands(tree: app_commands.CommandTree) -> list[app_commands.Command]:
+    result: list[app_commands.Command] = []
+    def _walk(item):
+        if isinstance(item, app_commands.Group):
+            for sub in item.commands:
+                _walk(sub)
+        elif isinstance(item, app_commands.Command):
+            result.append(item)
+
+    for top in tree.get_commands():
+        _walk(top)
+    return result
+
+
+async def _topic_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice]:
+    current = (current or "").strip().lower()
+    subtopics = [
+        ("mechanics", "Spirit World lore, Acting Method, Sanity & Corruption"),
+        ("progression", "Advancement ladder, requirements & ritual backlash"),
+        ("voice", "Voice channel (VC) digestion dominance & 60s loop"),
+        ("economy", "Gold, Tarot Coins, Divination, Bounties, Altar, Shop"),
+        ("tarot", "Secret Tarot Club gathering & anonymous webhooks"),
+        ("trials", "Demigod, Angel & Apotheosis trials & population caps"),
+        ("inactivity", "Inactivity decay (>30d) & Sequence regression (>365d)"),
+        ("roles", "Discord role formatting, hoisting (Seq 4-0) & diagnostics"),
+        ("admin", "Archangel, Creator & server configuration commands"),
+    ]
+    choices: list[app_commands.Choice] = []
+    for k, desc in subtopics:
+        if not current or current in k or current in desc.lower():
+            label = f"{k.title()}: {desc}"[:100]
+            choices.append(app_commands.Choice(name=label, value=k))
+
+    try:
+        if interaction.client and hasattr(interaction.client, "tree"):
+            for cmd in _collect_tree_commands(interaction.client.tree):
+                qname = cmd.qualified_name
+                if (not current or current in qname.lower()) and len(choices) < 25:
+                    label = f"/{qname}"[:100]
+                    if not any(c.value == qname for c in choices):
+                        choices.append(app_commands.Choice(name=label, value=qname))
+    except Exception:
+        pass
+
+    return choices[:25]
+
+
 class MetaCog(commands.Cog):
     srv = app_commands.Group(name="settings", description="View and edit live server settings.")
 
@@ -235,143 +377,12 @@ class MetaCog(commands.Cog):
             ephemeral=True,
         )
 
-    # --- /help ------------------------------------------------------------
-    async def _topic_autocomplete(
-        self, interaction: discord.Interaction, current: str
-    ) -> list[app_commands.Choice]:
-        current = current.lower()
-        subtopics = [
-            ("mechanics", "Spirit World lore, Acting Method, Sanity & Corruption"),
-            ("progression", "Advancement ladder, requirements & ritual backlash"),
-            ("voice", "Voice channel (VC) digestion dominance & 60s loop"),
-            ("economy", "Gold, Tarot Coins, Divination, Bounties, Altar, Shop"),
-            ("tarot", "Secret Tarot Club gathering & anonymous webhooks"),
-            ("trials", "Demigod, Angel & Apotheosis trials & population caps"),
-            ("inactivity", "Inactivity decay (>30d) & Sequence regression (>365d)"),
-            ("roles", "Discord role formatting, hoisting (Seq 4-0) & diagnostics"),
-            ("admin", "Archangel, Creator & server configuration commands"),
-        ]
-        choices = [
-            app_commands.Choice(name=f"{k}: {desc}", value=k)
-            for k, desc in subtopics
-            if current in k or current in desc.lower()
-        ]
-
-        # Also offer command matches if user typed something specific
-        cmd_names = [c.qualified_name for c in self._flatten()]
-        for name in cmd_names:
-            if current in name.lower() and len(choices) < 25:
-                choices.append(app_commands.Choice(name=f"/{name}", value=name))
-
-        return choices[:25]
-
     def _flatten(self) -> list:
-        result, seen = [], set()
-        for cmd in self.bot.tree.walk_commands():
-            if cmd.qualified_name in seen:
-                continue
-            seen.add(cmd.qualified_name)
-            result.append(cmd)
-            if isinstance(cmd, app_commands.Group):
-                for sub in cmd.walk_commands():
-                    if sub.qualified_name not in seen:
-                        seen.add(sub.qualified_name)
-                        result.append(sub)
-        return result
+        if hasattr(self.bot, "tree"):
+            return _collect_tree_commands(self.bot.tree)
+        return []
 
-class OracleDoubtModal(discord.ui.Modal, title="Spirit World Oracle — Ask Doubts"):
-    inquiry = discord.ui.TextInput(
-        label="What doubt burdens your mind?",
-        style=discord.TextStyle.paragraph,
-        placeholder="Ask about Pathways, Potions, Voice Digestion, Ritual Backlash, or Server Rules...",
-        required=True,
-        max_length=600,
-    )
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(thinking=True, ephemeral=True)
-        from utils.gemini import ask_oracle
-
-        question = self.inquiry.value.strip()
-        answer = await ask_oracle(question)
-
-        embed = persona.fog_embed(
-            "The Spirit World Oracle Whispers",
-            f"**Inquiry:** *\"{question}\"*\n\n{answer}",
-        )
-        embed.set_footer(text="The Fool's Attendant · Divine AI Oracle")
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-
-class HelpNavigationView(discord.ui.View):
-    def __init__(self, cog: MetaCog):
-        super().__init__(timeout=300)
-        self.cog = cog
-
-    @discord.ui.button(label="Overview", style=discord.ButtonStyle.primary, row=0, emoji="📜")
-    async def btn_overview(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        embed = self.cog._build_index_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Lore & Sanity", style=discord.ButtonStyle.secondary, row=0, emoji="🔮")
-    async def btn_mechanics(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        sub = _HELP_SUBTOPICS["mechanics"]
-        embed = persona.fog_embed(sub["title"], sub["description"])
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Progression", style=discord.ButtonStyle.secondary, row=0, emoji="⚡")
-    async def btn_progression(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        sub = _HELP_SUBTOPICS["progression"]
-        embed = persona.fog_embed(sub["title"], sub["description"])
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Voice XP", style=discord.ButtonStyle.secondary, row=0, emoji="🎙️")
-    async def btn_voice(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        sub = _HELP_SUBTOPICS["voice"]
-        embed = persona.fog_embed(sub["title"], sub["description"])
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Economy", style=discord.ButtonStyle.secondary, row=1, emoji="💰")
-    async def btn_economy(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        sub = _HELP_SUBTOPICS["economy"]
-        embed = persona.fog_embed(sub["title"], sub["description"])
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Tarot Club", style=discord.ButtonStyle.secondary, row=1, emoji="👁️")
-    async def btn_tarot(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        sub = _HELP_SUBTOPICS["tarot"]
-        embed = persona.fog_embed(sub["title"], sub["description"])
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Trials & Caps", style=discord.ButtonStyle.secondary, row=1, emoji="⚔️")
-    async def btn_trials(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        sub = _HELP_SUBTOPICS["trials"]
-        embed = persona.fog_embed(sub["title"], sub["description"])
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Slumber Decay", style=discord.ButtonStyle.secondary, row=1, emoji="⏳")
-    async def btn_inactivity(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        sub = _HELP_SUBTOPICS["inactivity"]
-        embed = persona.fog_embed(sub["title"], sub["description"])
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Roles", style=discord.ButtonStyle.secondary, row=2, emoji="👑")
-    async def btn_roles(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        sub = _HELP_SUBTOPICS["roles"]
-        embed = persona.fog_embed(sub["title"], sub["description"])
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Admin Tools", style=discord.ButtonStyle.secondary, row=2, emoji="🛡️")
-    async def btn_admin(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        sub = _HELP_SUBTOPICS["admin"]
-        embed = persona.fog_embed(sub["title"], sub["description"])
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Ask Oracle (AI Doubts)", style=discord.ButtonStyle.success, row=2, emoji="✨")
-    async def btn_ai_doubts(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        await interaction.response.send_modal(OracleDoubtModal())
-
-
+    # --- /help ------------------------------------------------------------
     @app_commands.command(name="help")
     @app_commands.describe(topic="Subtopic (mechanics/progression/voice/economy/tarot/trials/inactivity/roles/admin) or command name.")
     @app_commands.autocomplete(topic=_topic_autocomplete)
@@ -474,6 +485,7 @@ class HelpNavigationView(discord.ui.View):
                 parts.append(f"`{p.name}` — {p.description or ''} ({req})")
             embed.add_field(name="Parameters", value="\n".join(parts), inline=False)
         await interaction.response.send_message(embed=embed)
+
 
 
 async def setup(bot: commands.Bot) -> None:

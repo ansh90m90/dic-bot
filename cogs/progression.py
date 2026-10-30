@@ -257,9 +257,9 @@ class ProgressionCog(commands.Cog):
             self.db, target, row["pathway"], int(row["sequence"]), guild=interaction.guild
         )
 
-        # Generate Pillow card
+        # Generate Pillow card if Pillow is installed
         card_buf = render_profile_card(row, target.display_name, avatar_bytes, tarot_card)
-        file = discord.File(fp=card_buf, filename="profile.png")
+        file = discord.File(fp=card_buf, filename="profile.png") if card_buf else None
 
         seq = int(row["sequence"])
         est_time = pathways.estimated_ascension_time(seq, float(row["digestion"]))
@@ -270,7 +270,25 @@ class ProgressionCog(commands.Cog):
             f"**Sequence:** {seq} ({pathways.sequence_name(row['pathway'], seq)})\n"
             f"**Next Ascension Est. Time:** {est_time}",
         )
-        embed.set_image(url="attachment://profile.png")
+        if file:
+            embed.set_image(url="attachment://profile.png")
+        else:
+            # Fallback text slate when Pillow image is not generated
+            digestion = float(row.get("digestion", 0.0))
+            sanity = float(row.get("sanity", 100.0))
+            corruption = float(row.get("corruption", 0.0))
+            gold = int(row.get("gold", 0))
+            tarot = int(row.get("tarot_coins", 0))
+            embed.add_field(
+                name="📊 Status Slate",
+                value=(
+                    f"• **Digestion:** {digestion:.1f}%\n"
+                    f"• **Sanity:** {sanity:.0f}% | **Corruption:** {corruption:.0f}%\n"
+                    f"• **Wealth:** 🪙 {gold:,} Gold | 🎴 {tarot} Tarot Coins"
+                ),
+                inline=False,
+            )
+
         embed.add_field(
             name="⏳ Ascension Timeline",
             value=f"**{est_time}** *(includes buffer for irregular logins and breaks)*",
@@ -279,7 +297,10 @@ class ProgressionCog(commands.Cog):
         if error_diag:
             embed.add_field(name="⚠️ Role Diagnostics", value=error_diag, inline=False)
 
-        await interaction.response.send_message(embed=embed, file=file)
+        if file:
+            await interaction.response.send_message(embed=embed, file=file)
+        else:
+            await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="profile")
     @app_commands.describe(user="Whose profile card to inspect (defaults to you).")

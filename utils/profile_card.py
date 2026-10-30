@@ -5,7 +5,14 @@ import io
 import math
 from typing import Optional, Dict, Any
 
-from PIL import Image, ImageDraw, ImageFont
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    HAS_PILLOW = True
+except ImportError:
+    Image = None
+    ImageDraw = None
+    ImageFont = None
+    HAS_PILLOW = False
 
 from data import pathways
 
@@ -122,8 +129,10 @@ def render_profile_card(
     display_name: str,
     avatar_bytes: Optional[bytes] = None,
     tarot_card: Optional[str] = None,
-) -> io.BytesIO:
+) -> io.BytesIO | None:
     """Render an 880x500 Discord Dark Occult profile card."""
+    if not HAS_PILLOW or Image is None:
+        return None
     width, height = 880, 500
     image = Image.new("RGBA", (width, height), COLOR_BG_OUTER)
     draw = ImageDraw.Draw(image)

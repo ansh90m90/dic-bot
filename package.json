@@ -2,5 +2,9 @@
   "name": "fools-attendant",
   "private": true,
   "version": "1.0.0",
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "dev": "python3 app.py",
+    "build": "echo 'build complete'"
+  }
 }
