@@ -252,20 +252,27 @@ class ProgressionCog(commands.Cog):
         tarot_alias = self.db.get_tarot_alias(target.id)
         tarot_card = tarot_alias.get("card") if tarot_alias else None
 
+        angel_row = self.db.get_angel_title(target.id)
+        angel_title = angel_row["title"] if angel_row else None
+
         # Re-sync role and capture diagnostics
         role, error_diag = await sync_beyonder_role(
             self.db, target, row["pathway"], int(row["sequence"]), guild=interaction.guild
         )
 
         # Generate Pillow card if Pillow is installed
-        card_buf = render_profile_card(row, target.display_name, avatar_bytes, tarot_card)
+        card_buf = render_profile_card(
+            row, target.display_name, avatar_bytes, tarot_card, angel_title=angel_title
+        )
         file = discord.File(fp=card_buf, filename="profile.png") if card_buf else None
 
         seq = int(row["sequence"])
         est_time = pathways.estimated_ascension_time(seq, float(row["digestion"]))
 
+        angel_header = f"🪽 **Divine Authority:** Archangel · {angel_title}\n" if angel_title else ""
         embed = persona.fog_embed(
             f"{target.display_name} — Dossier",
+            f"{angel_header}"
             f"**Pathway:** {pathways.get_pathway(row['pathway'])['name']}  ·  "
             f"**Sequence:** {seq} ({pathways.sequence_name(row['pathway'], seq)})\n"
             f"**Next Ascension Est. Time:** {est_time}",
@@ -279,9 +286,11 @@ class ProgressionCog(commands.Cog):
             corruption = float(row.get("corruption", 0.0))
             gold = int(row.get("gold", 0))
             tarot = int(row.get("tarot_coins", 0))
+            angel_field_line = f"• **Divine Title:** 🪽 Archangel · {angel_title}\n" if angel_title else ""
             embed.add_field(
                 name="📊 Status Slate",
                 value=(
+                    f"{angel_field_line}"
                     f"• **Digestion:** {digestion:.1f}%\n"
                     f"• **Sanity:** {sanity:.0f}% | **Corruption:** {corruption:.0f}%\n"
                     f"• **Wealth:** 🪙 {gold:,} Gold | 🎴 {tarot} Tarot Coins"

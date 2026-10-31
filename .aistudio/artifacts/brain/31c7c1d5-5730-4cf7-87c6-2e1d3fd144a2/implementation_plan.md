@@ -15,6 +15,10 @@ A comprehensive architectural overhaul and balance pass for **The Fool's Attenda
   - `/tarot open [channel_name]`: Accepts an optional `channel_name` parameter (defaulting to `tarot-club`).
   - If the designated channel does not exist, the bot **automatically creates it** as a private chamber with permission overwrites (hidden from `@everyone`, read/write granted to the bot and the Tarot Club role), raising it in the guild and announcing its opening.
 - **Confirmed Decision 4 (Digestion XP & Voice Dominance)**: Both text chatting and active presence in voice channels generate digestion XP. Being active in Voice Channels (VC) yields the most XP (60 ticks/hour with continuous progression and a +25% unmuted group presence bonus, far exceeding rate-limited chat ticks).
+- **Confirmed Decision 5 (Dual Role Model & Unique Archangel Titles)**:
+  1. **Pathway Allegiance Roles**: Every Beyonder receives their official pathway allegiance role (`Pathway · {Name}`, e.g. `Pathway · The Fool`). Mass-provisioned via `/angel setup-roles`.
+  2. **Sequence Rank Roles**: Beyonders hold their active sequence rank role (`{Pathway} · Seq {seq} {Title}`).
+  3. **Unique Archangel Titles for Admins**: Server administrators hold unique divine Angel Titles (`🪽 Archangel · {Title}`, e.g. `🪽 Archangel · Angel of Time`) alongside the supreme `🪽 Archangel Council` role. Manually bestowable via `/angel title-set` with autocomplete, listed via `/angel title-list`, revocable via `/angel title-remove`, and showcased across `/profile`, `/status`, and the Archangel Console.
 
 ---
 
@@ -22,11 +26,11 @@ A comprehensive architectural overhaul and balance pass for **The Fool's Attenda
 
 **The Fool's Attendant** simulates the perilous, mystical world of *Lord of the Mysteries*. This update reinforces the dread and prestige of advancing through the Sequences:
 
-- **Strict Discord Hierarchy**: Roles now reflect formal sequence ranks (`{Pathway} · Seq {sequence} {Sequence Title}`), high sequences (Seq 4–0) are hoisted to tower over server member lists, and role synchronization is verified with diagnostic checks.
+- **Strict Discord Hierarchy & Pathway Allegiance**: Roles now reflect formal pathway allegiance (`Pathway · {Name}`), sequence ranks (`{Pathway} · Seq {sequence} {Sequence Title}`), and unique Archangel Titles (`🪽 Archangel · {Title}`). High sequences (Seq 4–0) and Archangels are hoisted (`hoist=True`) to tower over server member lists, and role synchronization is verified with diagnostic checks.
 - **Punishing Advancement Curve**: Digestion multipliers drop sharply at higher sequences, messages require sustained substance (≥15 characters), and advancing carries a ritual backlash hazard that consumes reagents and inflicts severe sanity and corruption penalties upon failure.
 - **Voice Presence Dominance & Decay**: Vocal presence in voice channels is the premier method of potion digestion, while extended inactivity invites mental fraying, corruption rise, and eventual sequence regression.
 - **Complete Artifact Purge**: The legacy Sealed Artifact system is cleanly eradicated from the database, commands, lore prompt, and message loops.
-- **Visual Hybrid Profile Cards**: `/profile` and `/status` generate an 880×500 Discord Dark Occult status slate with circular avatar framing, sacred geometry motifs, dynamic status gauges, and currency/progression stats.
+- **Visual Hybrid Profile Cards**: `/profile` and `/status` generate an 880×500 Discord Dark Occult status slate with circular avatar framing, sacred geometry motifs, dynamic status gauges, unique Archangel title badges, and currency/progression stats.
 
 ---
 

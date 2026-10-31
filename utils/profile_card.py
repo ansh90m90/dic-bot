@@ -129,6 +129,7 @@ def render_profile_card(
     display_name: str,
     avatar_bytes: Optional[bytes] = None,
     tarot_card: Optional[str] = None,
+    angel_title: Optional[str] = None,
 ) -> io.BytesIO | None:
     """Render an 880x500 Discord Dark Occult profile card."""
     if not HAS_PILLOW or Image is None:

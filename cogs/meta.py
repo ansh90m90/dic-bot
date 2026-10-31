@@ -127,14 +127,15 @@ _HELP_SUBTOPICS = {
         ),
     },
     "roles": {
-        "title": "Discord Hierarchy, Hoisting & Diagnostics",
+        "title": "Pathway Roles, Sequence Ranks & Archangel Titles",
         "description": (
-            "**Role Synchronization Standard:**\n"
-            "• **Naming Standard:** `{Pathway Name} · Seq {sequence} {Sequence Title}` (e.g., `Fool · Seq 9 Seer`).\n"
-            "• **Legacy In-Place Rename:** Automatically updates old role formats (`Fool · Seer`) to the official numbered format.\n"
-            "• **Hoisting:** High-Sequences (Sequence 4 Demigods down to Sequence 0 True Gods) have `hoist=True` enabled "
-            "to tower prominently above server member lists.\n"
-            "• **Old Sequence Cleanup:** Deletes older sequence roles upon promotion or demotion to prevent clutter.\n"
+            "**Server Role Architecture:**\n"
+            "• **Pathway Allegiance Roles:** `Pathway · {Pathway Name}` (e.g. `Pathway · The Fool`). Every Beyonder holds their pathway allegiance role.\n"
+            "• **Sequence Rank Roles:** `{Pathway Name} · Seq {sequence} {Sequence Title}` (e.g., `The Fool · Seq 9 Seer`). Tracks active sequence.\n"
+            "• **🪽 Archangel Council & Unique Titles:** Server administrators hold unique divine Angel Titles (`🪽 Archangel · {Title}`) and `🪽 Archangel Council`.\n"
+            "• **One-Click Provisioning:** Run `/angel setup-roles` to mass-provision all 22 Pathway roles and the Archangel Council role.\n"
+            "• **Hoisting:** High-Sequences (Sequence 4 Demigods down to Sequence 0 True Gods) and Archangels have `hoist=True` enabled.\n"
+            "• **Old Sequence Cleanup:** Deletes older sequence roles upon promotion or demotion to prevent role clutter.\n"
             "• **Auto-Restoration:** Members re-sync their Beyonder rank upon sending messages, joining voice channels, "
             "rejoining the server (`on_member_join`), running `/profile`, or when an admin runs `/angel sync-roles`.\n"
             "• **Permission Diagnostics:** If the bot lacks `manage_roles` or its role is below the target rank, "
@@ -146,10 +147,14 @@ _HELP_SUBTOPICS = {
         "description": (
             "**Divine Control Commands:**\n"
             "• `/angel console` — Open the interactive Archangel Console: visual roster, pending trials review & one-click treasury grants.\n"
+            "• `/angel setup-roles` — Automatically create and configure all 22 Pathway roles and the Archangel Council role in one click.\n"
+            "• `/angel title-set <title> [member]` — Bestow a unique divine Angel Title (e.g., 'Angel of Time') upon an administrator.\n"
+            "• `/angel title-list` — Inspect all active Archangels and see legendary titles available for claim.\n"
+            "• `/angel title-remove [member]` — Revoke an administrator's unique Angel Title and clean up roles.\n"
             "• `/angel grant <user> <currency> <amount>` — Generate and gift arbitrary Gold or Tarot Coins to any member.\n"
             "• `/angel sync-roles` — Force-resynchronize all Beyonder roles in the server with detailed metric diagnostics.\n"
             "• `/angel trial <user>` — Adjudicate pending Demigod and Angel acting trials.\n"
-            "• `/angel bestow <user> <formula/item/characteristic>` — Grant mystical items to faithful followers.\n"
+            "• `/angel bestow <user> <pathway> <seq>` — Grant Sequence 9–4 ranks to faithful followers.\n"
             "• `/angel cleanse <user>` — Purge corruption and restore sanity to afflicted Beyonders.\n"
             "• `/settings view/set/reset` — Configure live server parameters (e.g., shop prices, backlash hazard toggle).\n"
             "• `/creator appoint <user> <pathway> <seq>` — Instant elevation to any sequence rank.\n"

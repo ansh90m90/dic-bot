@@ -1,8 +1,8 @@
-"""Assign and synchronize per-(pathway, sequence) Discord roles with hoisting and diagnostics."""
+"""Assign and synchronize per-(pathway, sequence) and Archangel Discord roles with hoisting and diagnostics."""
 from __future__ import annotations
 
 import discord
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any, List
 
 from data import pathways
 from settings import settings
@@ -20,6 +20,34 @@ _GROUP_COLORS = {
     "Key of Light": 0x9B86C9,
 }
 
+ARCHANGEL_COUNCIL_ROLE_NAME = "🪽 Archangel Council"
+ARCHANGEL_COLOR = 0xF0B229  # Radiant Occult Gold
+
+LEGENDARY_ANGEL_TITLES = [
+    "Angel of Time",
+    "Angel of Retribution",
+    "Angel of Concealment",
+    "Angel of Fate",
+    "Angel of Wisdom",
+    "Angel of War",
+    "Angel of Death",
+    "Angel of Imagination",
+    "Angel of Stars",
+    "Angel of White",
+    "Angel of Purity",
+    "Angel of Secrets",
+    "Angel of Judgment",
+    "Angel of Redemption",
+    "Angel of the Grey Fog",
+    "King of Angels",
+    "Chief of the Silver City",
+    "Sword of Silver",
+    "Hand of Order",
+    "Eye of Omniscience",
+    "Prince of Abolition",
+    "Angel of Dreams",
+]
+
 
 async def resolve_member(
     guild: discord.Guild, user_or_member: discord.Member | discord.User | int
@@ -35,6 +63,13 @@ async def resolve_member(
         return await guild.fetch_member(user_id)
     except (discord.NotFound, discord.HTTPException, discord.Forbidden):
         return None
+
+
+def pathway_role_name(pathway_key: str) -> str:
+    """Format: 'Pathway · {Pathway Name}' (e.g. 'Pathway · The Fool')."""
+    data = pathways.get_pathway(pathway_key)
+    name = data["name"] if data else pathway_key.title()
+    return f"Pathway · {name}"
 
 
 def role_name(pathway_key: str, sequence: int) -> str:
@@ -55,14 +90,204 @@ def legacy_role_name(pathway_key: str, sequence: int) -> str:
     return f"{data['name']} · {title}"
 
 
+def angel_role_name(title: str) -> str:
+    """Format: '🪽 Archangel · {Title}'."""
+    clean = title.strip()
+    if clean.startswith("🪽 "):
+        return clean
+    if clean.lower().startswith("archangel"):
+        return f"🪽 {clean}"
+    return f"🪽 Archangel · {clean}"
+
+
+async def ensure_pathway_role(
+    guild: discord.Guild, pathway_key: str
+) -> Tuple[Optional[discord.Role], Optional[str]]:
+    """Ensure a Pathway allegiance role exists in the server."""
+    me = guild.me
+    if not me.guild_permissions.manage_roles:
+        return None, f"Lacking Manage Roles permission in {guild.name}."
+
+    p_name = pathway_role_name(pathway_key)
+    data = pathways.get_pathway(pathway_key) or {}
+    group_name = data.get("group", "")
+    target_color = discord.Color(_GROUP_COLORS.get(group_name, 0x8A8A9A))
+
+    role = discord.utils.get(guild.roles, name=p_name)
+    if role is None:
+        try:
+            role = await guild.create_role(
+                name=p_name,
+                color=target_color,
+                hoist=False,
+                mentionable=True,
+                reason="Automatic Pathway allegiance role creation",
+            )
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            return None, f"Failed to create role '{p_name}': {exc}"
+
+    return role, None
+
+
+async def setup_all_pathway_roles(guild: discord.Guild) -> dict[str, Any]:
+    """Pre-provision all 22 Pathway roles and the Archangel Council role in a server."""
+    res = {
+        "pathways_created": 0,
+        "pathways_existing": 0,
+        "council_role": False,
+        "errors": [],
+    }
+
+    me = guild.me
+    if not me.guild_permissions.manage_roles:
+        res["errors"].append(
+            f"The Fool's Attendant lacks **Manage Roles** in {guild.name}."
+        )
+        return res
+
+    # 1. Archangel Council Role (hoisted, golden)
+    council_role = discord.utils.get(guild.roles, name=ARCHANGEL_COUNCIL_ROLE_NAME)
+    if council_role is None:
+        try:
+            council_role = await guild.create_role(
+                name=ARCHANGEL_COUNCIL_ROLE_NAME,
+                color=discord.Color(ARCHANGEL_COLOR),
+                hoist=True,
+                mentionable=True,
+                reason="Archangel Council supreme authority role creation",
+            )
+            res["council_role"] = True
+        except Exception as exc:
+            res["errors"].append(f"Failed to create council role: {exc}")
+    else:
+        res["council_role"] = True
+
+    # 2. All 22 Pathway Roles
+    for p_key in pathways.PATHWAYS.keys():
+        p_name = pathway_role_name(p_key)
+        existing = discord.utils.get(guild.roles, name=p_name)
+        if existing is not None:
+            res["pathways_existing"] += 1
+            continue
+
+        role, err = await ensure_pathway_role(guild, p_key)
+        if err:
+            res["errors"].append(err)
+        elif role:
+            res["pathways_created"] += 1
+
+    return res
+
+
+async def sync_angel_title_role(
+    db, member: discord.Member, title: Optional[str] = None
+) -> Tuple[Optional[discord.Role], Optional[str]]:
+    """Synchronize an administrator's unique Angel Title and Archangel Council role."""
+    guild = member.guild
+    me = guild.me
+    if not me.guild_permissions.manage_roles:
+        return None, "Bot lacks Manage Roles permission."
+
+    # Look up title from DB if not provided
+    if title is None:
+        row = db.get_angel_title(member.id)
+        if not row:
+            return None, "No Angel title is registered for this member."
+        title = row["title"]
+    else:
+        db.set_angel_title(member.id, title)
+
+    # 1. Ensure Archangel Council role is granted
+    council_role = discord.utils.get(guild.roles, name=ARCHANGEL_COUNCIL_ROLE_NAME)
+    if council_role is None:
+        try:
+            council_role = await guild.create_role(
+                name=ARCHANGEL_COUNCIL_ROLE_NAME,
+                color=discord.Color(ARCHANGEL_COLOR),
+                hoist=True,
+                mentionable=True,
+                reason="Archangel Council initialization",
+            )
+        except Exception:
+            pass
+
+    if council_role and council_role not in member.roles:
+        if me.top_role > council_role:
+            try:
+                await member.add_roles(council_role, reason="Archangel Council membership")
+            except Exception:
+                pass
+
+    # 2. Ensure unique Angel Title role
+    target_role_name = angel_role_name(title)
+    role = discord.utils.get(guild.roles, name=target_role_name)
+    if role is None:
+        try:
+            role = await guild.create_role(
+                name=target_role_name,
+                color=discord.Color(ARCHANGEL_COLOR),
+                hoist=True,
+                mentionable=True,
+                reason="Unique Angel title role creation",
+            )
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            return None, f"Failed to create Angel title role: {exc}"
+
+    if me.top_role <= role:
+        return None, (
+            f"Bot's top role (**{me.top_role.name}**) is lower than or equal to **{role.name}**. "
+            "Drag the bot's role higher in Server Settings > Roles."
+        )
+
+    # Remove any old unique Angel roles the member had
+    for r in list(member.roles):
+        if r.name.startswith("🪽 Archangel · ") and r.id != role.id:
+            try:
+                await member.remove_roles(r, reason="Unique Angel title update")
+                if len(r.members) == 0 and me.top_role > r:
+                    await r.delete(reason="Clean up unused unique Angel title role")
+            except Exception:
+                pass
+
+    if role not in member.roles:
+        try:
+            await member.add_roles(role, reason="Unique Angel title bestowed")
+        except Exception as exc:
+            return None, f"Failed to assign role '{role.name}': {exc}"
+
+    db.set_angel_title(member.id, title, str(role.id))
+    return role, None
+
+
+async def remove_angel_title_role(db, member: discord.Member) -> Optional[str]:
+    """Remove a member's unique Angel Title and clean up the role."""
+    guild = member.guild
+    me = guild.me
+    db.clear_angel_title(member.id)
+
+    if not me.guild_permissions.manage_roles:
+        return "Bot lacks Manage Roles permission."
+
+    for r in list(member.roles):
+        if r.name.startswith("🪽 Archangel · "):
+            try:
+                await member.remove_roles(r, reason="Angel title revoked")
+                if len(r.members) == 0 and me.top_role > r:
+                    await r.delete(reason="Clean up revoked Angel title role")
+            except Exception as exc:
+                return f"Error removing role: {exc}"
+
+    return None
+
+
 async def sync_beyonder_role(
     db, member_or_user: discord.Member | discord.User | int, pathway_key: str, sequence: int,
     guild: Optional[discord.Guild] = None,
 ) -> Tuple[Optional[discord.Role], Optional[str]]:
-    """Synchronize a member's Pathway + Sequence role.
+    """Synchronize a member's Pathway allegiance and Sequence rank roles.
 
     Returns:
-        (role, None) on success.
+        (sequence_role, None) on success.
         (None, error_reason) on failure with actionable diagnostic text.
     """
     if not settings.get("features_roles", True):
@@ -88,20 +313,51 @@ async def sync_beyonder_role(
             "Please grant this permission in Server Settings > Roles."
         )
 
-    target_name = role_name(pathway_key, sequence)
-    legacy_name = legacy_role_name(pathway_key, sequence)
-    should_hoist = sequence <= 4
-
     data = pathways.get_pathway(pathway_key) or {}
     group_name = data.get("group", "")
     target_color = discord.Color(_GROUP_COLORS.get(group_name, 0x8A8A9A))
+
+    # --- 1. Ensure and Assign Pathway Allegiance Role ('Pathway · {Name}') ---
+    p_role_name = pathway_role_name(pathway_key)
+    path_role = discord.utils.get(target_guild.roles, name=p_role_name)
+    if path_role is None:
+        try:
+            path_role = await target_guild.create_role(
+                name=p_role_name,
+                color=target_color,
+                hoist=False,
+                mentionable=True,
+                reason="Pathway allegiance role creation",
+            )
+        except Exception:
+            pass
+
+    if path_role and path_role not in member.roles:
+        if me.top_role > path_role:
+            try:
+                await member.add_roles(path_role, reason="Beyonder Pathway allegiance")
+            except Exception:
+                pass
+
+    # Remove any other pathway roles the member might hold from a previous choice
+    for r in list(member.roles):
+        if r.name.startswith("Pathway · ") and (path_role is None or r.id != path_role.id):
+            if me.top_role > r:
+                try:
+                    await member.remove_roles(r, reason="Pathway re-alignment")
+                except Exception:
+                    pass
+
+    # --- 2. Ensure and Assign Sequence Rank Role ('{Pathway} · Seq {N} {Title}') ---
+    target_name = role_name(pathway_key, sequence)
+    legacy_name = legacy_role_name(pathway_key, sequence)
+    should_hoist = sequence <= 4  # Demigods, Angels, and True Gods are hoisted
 
     # Look for existing target role or rename legacy role in-place
     role = discord.utils.get(target_guild.roles, name=target_name)
     if role is None:
         legacy_role = discord.utils.get(target_guild.roles, name=legacy_name)
         if legacy_role is not None:
-            # Check hierarchy before modifying
             if me.top_role <= legacy_role:
                 return None, (
                     f"Bot's highest role (**{me.top_role.name}**) is below legacy role "
@@ -124,7 +380,7 @@ async def sync_beyonder_role(
                 name=target_name,
                 color=target_color,
                 hoist=should_hoist,
-                reason="Beyonder role creation",
+                reason="Beyonder Sequence role creation",
             )
         except discord.Forbidden:
             return None, "Forbidden: The bot lacks permission to create roles in this server."
@@ -153,17 +409,15 @@ async def sync_beyonder_role(
         if old_role is not None:
             try:
                 await member.remove_roles(old_role, reason="Beyonder promotion/demotion")
-                # If old role is now empty and was a sequence role, clean it up
                 if len(old_role.members) == 0 and (" · Seq " in old_role.name or " · " in old_role.name):
                     if me.top_role > old_role:
                         await old_role.delete(reason="Deleting unused Sequence role")
             except (discord.Forbidden, discord.HTTPException):
                 pass
 
-    # Also clean up any other pathway sequence roles the member might still hold
+    # Clean up any other sequence roles for this member
     for r in list(member.roles):
         if r.id != role.id and (" · Seq " in r.name or " · " in r.name):
-            # Check if this matches a pathway role pattern
             for p in pathways.PATHWAYS.values():
                 if r.name.startswith(f"{p['name']} · "):
                     if me.top_role > r:
@@ -173,7 +427,7 @@ async def sync_beyonder_role(
                             pass
                     break
 
-    # Assign new role to member
+    # Assign new sequence role to member
     if role not in member.roles:
         try:
             await member.add_roles(role, reason="Beyonder progression sync")
@@ -185,11 +439,19 @@ async def sync_beyonder_role(
             return None, f"Error adding role '{role.name}': {exc}"
 
     db.set_beyond_role(member.id, str(role.id))
+
+    # --- 3. If member is an Administrator / has an Angel Title, also sync their title role ---
+    if member.guild_permissions.administrator or db.get_angel_title(member.id):
+        try:
+            await sync_angel_title_role(db, member)
+        except Exception:
+            pass
+
     return role, None
 
 
 async def sync_all_guild_roles(bot: discord.Client, guild: discord.Guild) -> dict[str, int]:
-    """Sync Beyonder roles for all registered members in a guild. Returns summary metrics."""
+    """Sync Beyonder roles and Angel titles for all registered members in a guild."""
     metrics = {"synced": 0, "skipped": 0, "errors": 0}
     if not hasattr(bot, "db"):
         return metrics
@@ -212,5 +474,12 @@ async def sync_all_guild_roles(bot: discord.Client, guild: discord.Guild) -> dic
             metrics["errors"] += 1
         else:
             metrics["synced"] += 1
+
+    # Also sync angel titles for administrators
+    for title_row in db.all_angel_titles():
+        uid = int(title_row["user_id"])
+        member = await resolve_member(guild, uid)
+        if member:
+            await sync_angel_title_role(db, member, title_row["title"])
 
     return metrics

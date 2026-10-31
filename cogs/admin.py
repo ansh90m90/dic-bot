@@ -1,5 +1,6 @@
 """Divine Authority — `/creator`, `/angel`, and `/moderator` command groups."""
 from __future__ import annotations
+from typing import Optional
 
 import discord
 from discord import app_commands
@@ -8,7 +9,14 @@ from discord.ext import commands
 import config
 from data import ingredients, pathways
 from utils import checks, persona
-from utils.roles import sync_beyonder_role, sync_all_guild_roles
+from utils.roles import (
+    sync_beyonder_role,
+    sync_all_guild_roles,
+    setup_all_pathway_roles,
+    sync_angel_title_role,
+    remove_angel_title_role,
+    LEGENDARY_ANGEL_TITLES,
+)
 from db.database import Database
 from cogs.anomalies import EVENT_TYPES, trigger_anomaly
 from cogs.apotheosis import uniqueness_key
@@ -261,9 +269,12 @@ class AngelConsoleView(discord.ui.View):
                 badge = "✨ Stable"
 
             bar = _progress_bar(digestion)
+            angel_row = self.db.get_angel_title(uid)
+            angel_str = f"• **Divine Title:** 🪽 Archangel · {angel_row['title']}\n" if angel_row else ""
             embed.add_field(
                 name=f"{badge} · <@{uid}> ({seq_title})",
                 value=(
+                    f"{angel_str}"
                     f"• **Pathway:** {path_name} (Sequence {seq})\n"
                     f"• **Digestion:** `[{bar}]` {digestion:.1f}%\n"
                     f"• **Madness:** Sanity {sanity:.0f}% · Corruption {corruption:.0f}%\n"
@@ -606,6 +617,23 @@ class AngelConsoleView(discord.ui.View):
         await interaction.response.send_modal(TreasuryCustomModal(self))
 
 
+async def _angel_title_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    q = current.strip().lower()
+    choices = [
+        app_commands.Choice(name=t, value=t)
+        for t in LEGENDARY_ANGEL_TITLES
+        if q in t.lower()
+    ]
+    if q and not any(c.value.lower() == q for c in choices):
+        custom_name = current.strip()
+        if not custom_name.lower().startswith("angel of") and not custom_name.lower().startswith("archangel"):
+            custom_name = f"Angel of {custom_name.title()}"
+        choices.insert(0, app_commands.Choice(name=f"Custom: {custom_name}", value=custom_name))
+    return choices[:25]
+
+
 class AdminCog(commands.Cog):
     creator = app_commands.Group(
         name="creator", description="Above the Sequences — Server Owner only."
@@ -785,6 +813,169 @@ class AdminCog(commands.Cog):
                 f"• **Errors / Lacking Permissions:** {metrics['errors']}",
             ),
             ephemeral=True,
+        )
+
+    @angel.command(name="setup-roles")
+    @checks.admin_only
+    async def angel_setup_roles(self, interaction: discord.Interaction) -> None:
+        """Pre-provision all 22 Pathway allegiance roles and the Archangel Council role in this server."""
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                embed=persona.error_embed("This command may only be manifested within a server."),
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=False)
+        res = await setup_all_pathway_roles(guild)
+
+        err_text = ""
+        if res["errors"]:
+            err_text = f"\n\n⚠️ **Notices:**\n" + "\n".join(f"• {e}" for e in res["errors"][:5])
+
+        embed = persona.success_embed(
+            "Pathway & Council Roles Initialized",
+            (
+                f"**Guild:** {guild.name}\n\n"
+                f"• **🪽 Archangel Council Role:** {'Created & Configured' if res['council_role'] else 'Skipped/Unavailable'}\n"
+                f"• **New Pathway Roles Created:** {res['pathways_created']}\n"
+                f"• **Existing Pathway Roles:** {res['pathways_existing']}\n"
+                f"• **Total Pathways Provisioned:** {res['pathways_created'] + res['pathways_existing']} / 22"
+                f"{err_text}\n\n"
+                f"Beyonders will automatically receive both their Pathway allegiance role (`Pathway · {{Name}}`) "
+                f"and their Sequence rank role (`{{Name}} · Seq {{seq}} {{Title}}`) upon advancement or `/angel sync-roles`."
+            ),
+        )
+        await interaction.followup.send(embed=embed)
+
+    @angel.command(name="title-set")
+    @app_commands.describe(
+        title="Unique Angel Title (e.g. 'Angel of Time', 'Angel of Retribution').",
+        member="The administrator receiving the title (defaults to yourself).",
+    )
+    @app_commands.autocomplete(title=_angel_title_autocomplete)
+    @checks.admin_only
+    async def angel_title_set(
+        self,
+        interaction: discord.Interaction,
+        title: str,
+        member: Optional[discord.Member] = None,
+    ) -> None:
+        """Bestow a unique divine Angel Title upon an administrator (creates a hoisted Archangel role)."""
+        target = member or interaction.user
+        if not isinstance(target, discord.Member):
+            target = interaction.guild.get_member(target.id) if interaction.guild else None
+
+        if target is None:
+            await interaction.response.send_message(
+                embed=persona.error_embed("Could not resolve target member in this server."),
+                ephemeral=True,
+            )
+            return
+
+        clean_title = title.strip()
+        if clean_title.startswith("🪽 Archangel · "):
+            clean_title = clean_title.replace("🪽 Archangel · ", "")
+        elif clean_title.startswith("🪽 "):
+            clean_title = clean_title.replace("🪽 ", "")
+
+        role, err = await sync_angel_title_role(self.db, target, clean_title)
+        if err and role is None:
+            await interaction.response.send_message(
+                embed=persona.error_embed(f"Failed to bestow Angel Title: {err}"),
+                ephemeral=True,
+            )
+            return
+
+        embed = persona.success_embed(
+            "Divine Archangel Bestowal",
+            (
+                f"**{target.display_name}** has claimed their seat among the divine!\n\n"
+                f"🪽 **Divine Title:** Archangel · {clean_title}\n"
+                f"🏷️ **Assigned Role:** {role.mention if role else 'None'}\n"
+                f"🏛️ **Council:** Granted **🪽 Archangel Council** membership.\n\n"
+                f"*Their unique title is now visible across `/profile`, `/status`, and the Archangel Console.*"
+            ),
+        )
+        if err:
+            embed.add_field(name="⚠️ Diagnostic Notice", value=err, inline=False)
+
+        await interaction.response.send_message(embed=embed)
+
+    @angel.command(name="title-list")
+    async def angel_title_list(self, interaction: discord.Interaction) -> None:
+        """List active Angel Titles in the realm and legendary titles available for claim."""
+        active = self.db.all_angel_titles()
+        embed = persona.fog_embed(
+            "The Archangel Council of Divine Titles",
+            "Administrators holding supreme authority in the realm bear unique Angel Titles.\n",
+        )
+
+        active_lines = []
+        claimed_names = set()
+        for row in active:
+            uid = int(row["user_id"])
+            t = row["title"]
+            claimed_names.add(t.lower())
+            active_lines.append(f"• <@{uid}> — **🪽 Archangel · {t}**")
+
+        if active_lines:
+            embed.add_field(
+                name="✨ Active Archangels",
+                value="\n".join(active_lines),
+                inline=False,
+            )
+        else:
+            embed.add_field(
+                name="✨ Active Archangels",
+                value="*No Angel titles have been claimed yet in this realm. Use `/angel title-set` to claim one.*",
+                inline=False,
+            )
+
+        avail = [t for t in LEGENDARY_ANGEL_TITLES if t.lower() not in claimed_names]
+        if avail:
+            sample_avail = avail[:12]
+            embed.add_field(
+                name="📜 Legendary Titles Available for Bestowal",
+                value=", ".join(f"`{t}`" for t in sample_avail) + (f" *and {len(avail) - len(sample_avail)} more...*" if len(avail) > len(sample_avail) else ""),
+                inline=False,
+            )
+
+        embed.set_footer(text="Bestow titles using /angel title-set <title> [member]")
+        await interaction.response.send_message(embed=embed)
+
+    @angel.command(name="title-remove")
+    @app_commands.describe(member="The member whose title will be revoked.")
+    @checks.admin_only
+    async def angel_title_remove(
+        self, interaction: discord.Interaction, member: Optional[discord.Member] = None
+    ) -> None:
+        """Revoke a member's Angel Title and remove their Archangel role."""
+        target = member or interaction.user
+        if not isinstance(target, discord.Member):
+            target = interaction.guild.get_member(target.id) if interaction.guild else None
+
+        if target is None:
+            await interaction.response.send_message(
+                embed=persona.error_embed("Could not resolve target member."),
+                ephemeral=True,
+            )
+            return
+
+        err = await remove_angel_title_role(self.db, target)
+        if err:
+            await interaction.response.send_message(
+                embed=persona.error_embed(f"Failed to remove Angel title: {err}"),
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            embed=persona.success_embed(
+                "Angel Title Revoked",
+                f"**{target.display_name}**'s divine title and associated Archangel roles have been stripped.",
+            )
         )
 
     @angel.command(name="bestow")

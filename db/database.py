@@ -101,6 +101,12 @@ class Database:
                     ends_at REAL NOT NULL,
                     data TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS angel_titles (
+                    user_id INTEGER PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    role_id TEXT
+                );
                 """
             )
 
@@ -475,6 +481,23 @@ class Database:
 
     def clear_tarot_alias(self, user_id: int) -> None:
         self._execute("DELETE FROM tarot_aliases WHERE user_id = ?", (user_id,))
+
+    # --- angel titles -----------------------------------------------------
+    def set_angel_title(self, user_id: int, title: str, role_id: str | None = None) -> None:
+        self._execute(
+            "INSERT INTO angel_titles (user_id, title, role_id) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET title = excluded.title, role_id = COALESCE(excluded.role_id, role_id)",
+            (user_id, title, role_id),
+        )
+
+    def get_angel_title(self, user_id: int) -> Optional[Dict]:
+        return self._fetchone("SELECT * FROM angel_titles WHERE user_id = ?", (user_id,))
+
+    def clear_angel_title(self, user_id: int) -> None:
+        self._execute("DELETE FROM angel_titles WHERE user_id = ?", (user_id,))
+
+    def all_angel_titles(self) -> List[Dict]:
+        return self._fetchall("SELECT * FROM angel_titles")
 
     # --- anomalies --------------------------------------------------------
     def set_anomaly(self, channel_id: int, event_type: str, ends_at: float, data: Any) -> None:
