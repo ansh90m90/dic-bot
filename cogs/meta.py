@@ -146,6 +146,9 @@ _HELP_SUBTOPICS = {
         "title": "Archangel & Creator Administration Tools",
         "description": (
             "**Divine Control Commands:**\n"
+            "• `/divine-permission add <user>` — Bestow supreme Above-the-Sequences authority upon any user to authorize all commands.\n"
+            "• `/divine-permission list` — Display all active Divine Permission holders and permanent Master Creators.\n"
+            "• `/divine-permission remove <user>` — Revoke a user's Above-the-Sequences Divine Permission.\n"
             "• `/angel console` — Open the interactive Archangel Console: visual roster, pending trials review & one-click treasury grants.\n"
             "• `/angel setup-roles` — Automatically create and configure all 22 Pathway roles and the Archangel Council role in one click.\n"
             "• `/angel title-set <title> [member]` — Bestow a unique divine Angel Title (e.g., 'Angel of Time') upon an administrator.\n"
@@ -154,7 +157,7 @@ _HELP_SUBTOPICS = {
             "• `/angel grant <user> <currency> <amount>` — Generate and gift arbitrary Gold or Tarot Coins to any member.\n"
             "• `/angel sync-roles` — Force-resynchronize all Beyonder roles in the server with detailed metric diagnostics.\n"
             "• `/angel trial <user>` — Adjudicate pending Demigod and Angel acting trials.\n"
-            "• `/angel bestow <user> <pathway> <seq>` — Grant Sequence 9–4 ranks to faithful followers.\n"
+            "• `/angel bestow <user> <pathway> <seq>` — Grant Sequence 9–4 ranks to faithful followers (0-9 for Owners).\n"
             "• `/angel cleanse <user>` — Purge corruption and restore sanity to afflicted Beyonders.\n"
             "• `/settings view/set/reset` — Configure live server parameters (e.g., shop prices, backlash hazard toggle).\n"
             "• `/creator appoint <user> <pathway> <seq>` — Instant elevation to any sequence rank.\n"

@@ -107,6 +107,13 @@ class Database:
                     title TEXT NOT NULL,
                     role_id TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS divine_permissions (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    granted_by INTEGER,
+                    granted_at REAL
+                );
                 """
             )
 
@@ -583,3 +590,32 @@ class Database:
             "ORDER BY sequence ASC, digestion DESC, active_days DESC LIMIT ?",
             (limit,),
         )
+
+    # --- divine permissions (Above the Sequences authority) --------------
+    def grant_divine_permission(self, user_id: int, username: str = "", granted_by: int = 0) -> None:
+        self._execute(
+            """
+            INSERT INTO divine_permissions (user_id, username, granted_by, granted_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                username = excluded.username,
+                granted_by = excluded.granted_by,
+                granted_at = excluded.granted_at
+            """,
+            (user_id, username, granted_by, self._now()),
+        )
+
+    def revoke_divine_permission(self, user_id: int) -> bool:
+        row = self._fetchone("SELECT user_id FROM divine_permissions WHERE user_id = ?", (user_id,))
+        if not row:
+            return False
+        self._execute("DELETE FROM divine_permissions WHERE user_id = ?", (user_id,))
+        return True
+
+    def has_divine_permission(self, user_id: int) -> bool:
+        row = self._fetchone("SELECT user_id FROM divine_permissions WHERE user_id = ?", (user_id,))
+        return row is not None
+
+    def list_divine_permissions(self) -> List[Dict]:
+        return self._fetchall("SELECT user_id, username, granted_by, granted_at FROM divine_permissions ORDER BY granted_at ASC")
+

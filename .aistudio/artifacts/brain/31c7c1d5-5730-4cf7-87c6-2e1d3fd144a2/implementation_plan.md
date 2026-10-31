@@ -19,6 +19,10 @@ A comprehensive architectural overhaul and balance pass for **The Fool's Attenda
   1. **Pathway Allegiance Roles**: Every Beyonder receives their official pathway allegiance role (`Pathway · {Name}`, e.g. `Pathway · The Fool`). Mass-provisioned via `/angel setup-roles`.
   2. **Sequence Rank Roles**: Beyonders hold their active sequence rank role (`{Pathway} · Seq {seq} {Title}`).
   3. **Unique Archangel Titles for Admins**: Server administrators hold unique divine Angel Titles (`🪽 Archangel · {Title}`, e.g. `🪽 Archangel · Angel of Time`) alongside the supreme `🪽 Archangel Council` role. Manually bestowable via `/angel title-set` with autocomplete, listed via `/angel title-list`, revocable via `/angel title-remove`, and showcased across `/profile`, `/status`, and the Archangel Console.
+- **Confirmed Decision 6 (Master Creators & Divine Permissions System)**:
+  1. **Permanent Master Creators**: `core.inbox1999` and `mr.fool_here` are permanent bot owners (Above the Sequences). They authorize every command in the bot even when in Sequence 9 or without a pathway.
+  2. **Dynamic Divine Permissions (`/divine-permission`)**: Owners can dynamically grant, inspect, and revoke supreme Divine Permission for other users via `/divine-permission add <user>`, `/divine-permission list`, and `/divine-permission remove <user>` (also available under `/creator divine-add`, `/creator divine-list`, `/creator divine-remove`).
+  3. **Universal Command Authorization**: Anyone with Divine Permission or Owner status automatically satisfies `is_owner`, `is_admin`, `is_moderator`, and `is_beyonder` checks across all commands.
 
 ---
 

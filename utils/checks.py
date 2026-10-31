@@ -16,10 +16,43 @@ from settings import settings
 
 
 def is_owner(interaction: discord.Interaction) -> bool:
-    if interaction.user.id in config.OWNER_IDS:
+    user = interaction.user
+    uid = user.id
+
+    # 1. Configured OWNER_IDS
+    if uid in config.OWNER_IDS:
         return True
+
+    # 2. Guild owner
     guild = interaction.guild
-    return bool(guild and guild.owner_id == interaction.user.id)
+    if guild and guild.owner_id == uid:
+        return True
+
+    # 3. Permanent Master Creators / configured usernames (core.inbox1999, mr.fool_here, etc.)
+    uname = getattr(user, "name", "") or ""
+    clean_uname = uname.strip().lower().lstrip("@")
+    if clean_uname in config.OWNER_USERNAMES:
+        return True
+
+    gname = getattr(user, "global_name", "") or ""
+    if gname and gname.strip().lower().lstrip("@") in config.OWNER_USERNAMES:
+        return True
+
+    str_user = str(user).lower().split("#")[0].strip().lstrip("@")
+    if str_user in config.OWNER_USERNAMES:
+        return True
+
+    # 4. Check dynamic Divine Permissions in database
+    bot = interaction.client
+    db = getattr(bot, "db", None)
+    if db and hasattr(db, "has_divine_permission"):
+        try:
+            if db.has_divine_permission(uid):
+                return True
+        except Exception:
+            pass
+
+    return False
 
 
 def is_admin(interaction: discord.Interaction) -> bool:
@@ -47,7 +80,9 @@ def is_moderator(interaction: discord.Interaction) -> bool:
 
 
 def is_beyonder(interaction: discord.Interaction) -> bool:
-    """Check if the interacting member has sworn fealty and drunk a Sequence 9 potion."""
+    """Check if the interacting member has sworn fealty and drunk a Sequence 9 potion, or holds divine authority."""
+    if is_owner(interaction):
+        return True
     bot = interaction.client
     db = getattr(bot, "db", None)
     if db is None:

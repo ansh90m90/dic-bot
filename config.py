@@ -68,6 +68,24 @@ SETTINGS_PATH: str = os.getenv("SETTINGS_PATH", str(BASE_DIR / "settings.json"))
 
 # --- Privilege hierarchy --------------------------------------------------
 OWNER_IDS: set[int] = _as_int_set(os.getenv("OWNER_IDS"))
+
+# Permanent Master Creator usernames (Above the Sequences supreme authority)
+DEFAULT_OWNER_USERNAMES: set[str] = {
+    "core.inbox1999",
+    "mr.fool_here",
+}
+
+
+def _as_str_set(value: str | None) -> set[str]:
+    result: set[str] = set()
+    for part in (value or "").split(","):
+        part = part.strip().lower().lstrip("@")
+        if part:
+            result.add(part)
+    return result
+
+
+OWNER_USERNAMES: set[str] = DEFAULT_OWNER_USERNAMES | _as_str_set(os.getenv("OWNER_USERNAMES"))
 ADMIN_ROLE: str = os.getenv("ADMIN_ROLE", "Archangel Council")
 MOD_ROLE: str = os.getenv("MOD_ROLE", "Moderator")
 TAROT_ROLE: str = os.getenv("TAROT_ROLE", "Tarot Club")

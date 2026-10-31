@@ -638,6 +638,10 @@ class AdminCog(commands.Cog):
     creator = app_commands.Group(
         name="creator", description="Above the Sequences — Server Owner only."
     )
+    divine_perm = app_commands.Group(
+        name="divine-permission",
+        description="Bestow, inspect, or revoke supreme Above-the-Sequences authority.",
+    )
     angel = app_commands.Group(
         name="angel", description="Archangel Council — Server Admin only."
     )
@@ -775,6 +779,122 @@ class AdminCog(commands.Cog):
                 f"Their corruption is absolute; the fog will claim them shortly."
             )
         )
+
+    # --- Divine Permissions Management (Above the Sequences) -------------
+    @creator.command(name="divine-add")
+    @app_commands.describe(user="Whom to bestow supreme Above-the-Sequences authority upon.")
+    @checks.owner_only
+    async def creator_divine_add(
+        self, interaction: discord.Interaction, user: discord.Member
+    ) -> None:
+        """Bestow Divine Permission upon a member to authorize all bot commands."""
+        await self.divine_perm_add(interaction, user)
+
+    @creator.command(name="divine-list")
+    @checks.owner_only
+    async def creator_divine_list(self, interaction: discord.Interaction) -> None:
+        """List all users who hold supreme Divine Permission and Permanent Master Owners."""
+        await self.divine_perm_list(interaction)
+
+    @creator.command(name="divine-remove")
+    @app_commands.describe(user="Whom to strip of Above-the-Sequences authority.")
+    @checks.owner_only
+    async def creator_divine_remove(
+        self, interaction: discord.Interaction, user: discord.Member
+    ) -> None:
+        """Revoke a user's Above-the-Sequences Divine Permission."""
+        await self.divine_perm_remove(interaction, user)
+
+    # Top-level group /divine-permission
+    @divine_perm.command(name="add")
+    @app_commands.describe(user="The member to bestow Divine Permission upon.")
+    @checks.owner_only
+    async def divine_perm_add(
+        self, interaction: discord.Interaction, user: discord.Member
+    ) -> None:
+        """Bestow supreme Above-the-Sequences Divine Permission to authorize all commands."""
+        uname = f"{user.name}"
+        self.db.grant_divine_permission(user.id, uname, interaction.user.id)
+        embed = persona.success_embed(
+            "Divine Permission Bestowed",
+            (
+                f"**{user.display_name}** (`{user.name}`) has been elevated **Above the Sequences**!\n\n"
+                f"✦ **Authority:** Full Divine Permission Granted\n"
+                f"✦ **Privileges:** Authorized to execute all Creator, Archangel, Moderator, and Beyonder commands regardless of Sequence rank.\n"
+                f"✦ **Bestowed By:** {interaction.user.display_name}"
+            ),
+        )
+        await interaction.response.send_message(embed=embed)
+
+    @divine_perm.command(name="list")
+    @checks.owner_only
+    async def divine_perm_list(self, interaction: discord.Interaction) -> None:
+        """List all users who hold supreme Divine Permission and Permanent Master Owners."""
+        divine_rows = self.db.list_divine_permissions()
+        embed = persona.fog_embed(
+            "Above the Sequences — Divine Authority Roster",
+            "Entities in this roster hold supreme authority to execute all bot commands across all Sequences.",
+        )
+
+        master_creators = sorted(list(config.OWNER_USERNAMES))
+        embed.add_field(
+            name="👑 Permanent Master Creators",
+            value="\n".join(f"• `{u}`" for u in master_creators) if master_creators else "*None configured*",
+            inline=False,
+        )
+
+        if divine_rows:
+            lines = []
+            for r in divine_rows:
+                uid = int(r["user_id"])
+                uname = r.get("username") or f"User {uid}"
+                by_id = int(r.get("granted_by") or 0)
+                by_str = f" (by <@{by_id}>)" if by_id else ""
+                lines.append(f"• <@{uid}> (`{uname}`){by_str}")
+            embed.add_field(
+                name=f"✨ Dynamic Divine Permissions ({len(divine_rows)})",
+                value="\n".join(lines),
+                inline=False,
+            )
+        else:
+            embed.add_field(
+                name="✨ Dynamic Divine Permissions",
+                value="*No additional users currently have dynamic divine permissions. Use `/divine-permission add <user>` to grant.*",
+                inline=False,
+            )
+
+        await interaction.response.send_message(embed=embed)
+
+    @divine_perm.command(name="remove")
+    @app_commands.describe(user="The member whose Divine Permission will be revoked.")
+    @checks.owner_only
+    async def divine_perm_remove(
+        self, interaction: discord.Interaction, user: discord.Member
+    ) -> None:
+        """Revoke a user's Above-the-Sequences Divine Permission."""
+        if user.name.lower() in config.OWNER_USERNAMES:
+            await interaction.response.send_message(
+                embed=persona.error_embed(
+                    f"**{user.display_name}** (`{user.name}`) is a Permanent Master Creator "
+                    "and cannot have their innate authority revoked."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        ok = self.db.revoke_divine_permission(user.id)
+        if not ok:
+            await interaction.response.send_message(
+                embed=persona.error_embed(f"**{user.display_name}** does not hold dynamic divine permission."),
+                ephemeral=True,
+            )
+            return
+
+        embed = persona.success_embed(
+            "Divine Permission Revoked",
+            f"**{user.display_name}**'s Above-the-Sequences Divine Permission has been stripped.",
+        )
+        await interaction.response.send_message(embed=embed)
 
     # ======================================================================
     # ANGEL (admin)
@@ -992,8 +1112,8 @@ class AdminCog(commands.Cog):
         pathway: str,
         seq: app_commands.Range[int, 0, 9],
     ) -> None:
-        """Grant ranks up to Sequence 4 only. Sequence 3+ is divinely rejected."""
-        if seq in (0, 1, 2, 3):
+        """Grant ranks up to Sequence 4 only. Sequence 3+ is divinely rejected (unless authorized Above the Sequences)."""
+        if seq in (0, 1, 2, 3) and not checks.is_owner(interaction):
             await interaction.response.send_message(
                 embed=persona.error_embed(
                     "**Divine Rejection.** The Archangel Council may raise no one beyond "

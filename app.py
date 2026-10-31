@@ -112,6 +112,15 @@ def get_sanctum_stats() -> dict:
         except Exception:
             pass
 
+        try:
+            cur.execute("SELECT user_id, username FROM divine_permissions;")
+            stats["divine_permissions"] = [
+                {"user_id": str(r["user_id"]), "username": r["username"] or "Unknown"}
+                for r in cur.fetchall()
+            ]
+        except Exception:
+            stats["divine_permissions"] = []
+
         conn.close()
         stats["db_connected"] = True
     except Exception as exc:
@@ -148,6 +157,11 @@ def generate_html_page() -> str:
         f'<div class="angel-badge">🪽 <strong>Archangel · {html.escape(a["title"])}</strong> (ID: {html.escape(a["user_id"])})</div>'
         for a in stats.get("angel_titles", [])
     ) or '<div class="empty-state">No Angel Titles claimed yet. Use <code>/angel title-set</code> in Discord.</div>'
+
+    divine_perm_items = "".join(
+        f'<div class="angel-badge">✨ <strong>{html.escape(d["username"])}</strong> (ID: {html.escape(d["user_id"])})</div>'
+        for d in stats.get("divine_permissions", [])
+    ) or '<div class="empty-state">No dynamic permissions granted yet. Use <code>/divine-permission add</code> in Discord.</div>'
 
     logs_text = "\n".join(html.escape(line) for line in list(LOG_BUFFER)[-50:]) or "Waiting for bot activity..."
 
@@ -454,6 +468,28 @@ def generate_html_page() -> str:
       </div>
     </div>
 
+    <div class="card" style="margin-bottom: 24px; border-color: rgba(240, 178, 41, 0.35);">
+      <div class="section-title" style="color: var(--gold);">👑 Above the Sequences — Supreme Divine Authority</div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+        Entities holding supreme authority can execute all commands (Creator, Archangel, Moderator, Beyonder) regardless of Sequence rank (even at Sequence 9).
+      </p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <div style="font-size: 12px; font-weight: 600; color: var(--gold); margin-bottom: 6px;">Permanent Master Creators:</div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <div class="angel-badge">👑 <strong>core.inbox1999</strong></div>
+            <div class="angel-badge">👑 <strong>mr.fool_here</strong></div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size: 12px; font-weight: 600; color: #a78bfa; margin-bottom: 6px;">Dynamic Divine Permissions:</div>
+          <div class="angel-list">
+            {divine_perm_items}
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="console-header">
         <div class="section-title" style="margin-bottom: 0;">📜 Divine Sanctum Log Stream</div>
@@ -467,6 +503,9 @@ def generate_html_page() -> str:
     <div class="quick-guide" style="margin-top: 20px;">
       <strong>🌟 Quick Discord Commands Reference:</strong>
       <ul>
+        <li><code>/divine-permission add &lt;user&gt;</code> — Bestow supreme Above-the-Sequences Divine Permission on any user to authorize all commands.</li>
+        <li><code>/divine-permission list</code> — Display all active Divine Permission holders and permanent Master Creators.</li>
+        <li><code>/divine-permission remove &lt;user&gt;</code> — Revoke a user's Above-the-Sequences Divine Permission.</li>
         <li><code>/angel setup-roles</code> — Automatically create and configure all 22 Pathway roles and the Archangel Council role in one click.</li>
         <li><code>/angel title-set &lt;title&gt; [member]</code> — Bestow unique hoisted Archangel Titles (e.g. Angel of Time, Angel of Retribution).</li>
         <li><code>/angel console</code> — Interactive management dashboard inside Discord (Beyonder roster, trials review, one-click treasury).</li>

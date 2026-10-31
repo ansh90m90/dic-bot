@@ -41,11 +41,68 @@ GROUPS: Dict[str, List[str]] = {
     "Key of Light": ["wheel_of_fortune"],
 }
 
+# Thematic RPG Categories for non-readers to quickly find their ideal playstyle
+CATEGORIES: Dict[str, Dict[str, Any]] = {
+    "divination": {
+        "title": "🔮 Divination & Mysteries",
+        "description": "Masters of foresight, spatial portals, secret lore, and reality-bending illusions.",
+        "pathways": ["fool", "door", "hermit"],
+    },
+    "mind": {
+        "title": "🧠 Mind, Soul & Psychology",
+        "description": "Telepaths, psychological manipulators, and deduction savants.",
+        "pathways": ["visionary", "white_tower"],
+    },
+    "warriors": {
+        "title": "⚔️ Warriors & Frontline Might",
+        "description": "Unstoppable heavy knights, tactical war commanders, and apocalyptic thunder brawlers.",
+        "pathways": ["twilight_giant", "red_priest", "tyrant"],
+    },
+    "stealth": {
+        "title": "🗡️ Stealth, Rogues & Tricksters",
+        "description": "Shadow stalkers, conceptual thieves, agile infiltrators, and deadly assassins.",
+        "pathways": ["error", "darkness", "demoness"],
+    },
+    "law": {
+        "title": "⚖️ Law, Order & Entropy",
+        "description": "Enforcers of absolute rules, legal loophole exploiters, and arbiters of order.",
+        "pathways": ["justiciar", "black_emperor"],
+    },
+    "nature": {
+        "title": "🌿 Nature, Light & Healing",
+        "description": "Holy purifiers, herbal alchemists, life-giving druids, and anti-undead champions.",
+        "pathways": ["sun", "moon", "mother"],
+    },
+    "occult": {
+        "title": "💀 Occult, Curses & Underworld",
+        "description": "Necromancers, soul-grazing shepherds, cursed werewolves, and fiendish berserkers.",
+        "pathways": ["death", "hanged_man", "abyss", "chained"],
+    },
+    "fate": {
+        "title": "🎲 Fate, Luck & Probability",
+        "description": "Gamblers blessed with extraordinary luck who dodge lethal strikes by sheer coincidence.",
+        "pathways": ["wheel_of_fortune"],
+    },
+    "artificer": {
+        "title": "⚙️ Artificer & Arcane Machinery",
+        "description": "Steampunk inventors, magical gunsmiths, and enchanted contraption crafters.",
+        "pathways": ["paragon"],
+    },
+}
+
+SAFE_SEQ0_TITLE = "??? [Ascension Mystery]"
+
 PATHWAYS: Dict[str, Dict] = {
     "fool": {
         "name": "Fool",
         "group": "Lord of the Mysteries",
         "above": "Lord of the Mysteries",
+        "archetype": "Mystic Puppeteer & Diviner",
+        "category": "🔮 Divination & Mysteries",
+        "role": "Battlefield Controller / Illusionist",
+        "difficulty": "Moderate (Tactical Mind Games)",
+        "summary": "Starts as a fortune teller and stage magician, gradually evolving into a reality-twisting puppeteer who controls marionettes, alters faces, and summons historical illusions.",
+        "playstyle": "Favors intellect, preparation, and tactical positioning over brute physical force.",
         "sequences": {
             9: "Seer", 8: "Clown", 7: "Magician", 6: "Faceless", 5: "Marionettist",
             4: "Bizarro Sorcerer", 3: "Scholar of Yore", 2: "Miracle Invoker",
@@ -56,6 +113,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Error",
         "group": "Lord of the Mysteries",
         "above": "Lord of the Mysteries",
+        "archetype": "Cosmic Rogue & Concept Thief",
+        "category": "🗡️ Stealth, Rogues & Tricksters",
+        "role": "Stealth Infiltrator / Trickster",
+        "difficulty": "Advanced (Rule Manipulation)",
+        "summary": "A supernatural thief who begins by stealing physical objects and advances to stealing enemy thoughts, active spell abilities, distance, and even fragments of time and fate.",
+        "playstyle": "Turns the enemy's own spells against them, exploits system loopholes, and outsmarts brute force.",
         "sequences": {
             9: "Marauder", 8: "Swindler", 7: "Cryptologist", 6: "Prometheus",
             5: "Dream Stealer", 4: "Parasite", 3: "Mentor of Deceit",
@@ -66,6 +129,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Door",
         "group": "Lord of the Mysteries",
         "above": "Lord of the Mysteries",
+        "archetype": "Spatial Mage & Dimensional Traveler",
+        "category": "🔮 Divination & Mysteries",
+        "role": "High-Mobility Caster / Spell Copier",
+        "difficulty": "Beginner Friendly",
+        "summary": "Masters of spatial manipulation. Unlocks any barrier, teleports across vast distances, copies the magical abilities of any class, and explores other dimensions.",
+        "playstyle": "Supreme mobility, hit-and-run evasion, and immense spell versatility.",
         "sequences": {
             9: "Apprentice", 8: "Trickmaster", 7: "Astrologer", 6: "Scribe",
             5: "Traveler", 4: "Secrets Sorcerer", 3: "Wanderer",
@@ -76,6 +145,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Visionary",
         "group": "God Almighty",
         "above": "God Almighty",
+        "archetype": "Telepath & Reality Dreamweaver",
+        "category": "🧠 Mind, Soul & Psychology",
+        "role": "Mental Enchanter / Social Manipulator",
+        "difficulty": "Moderate (Social & Mind Control)",
+        "summary": "Observes body language, reads surface thoughts, plants psychological suggestions, calms ally sanity, and weaves dreamscapes that can manifest into solid physical reality.",
+        "playstyle": "Psychological warfare, team sanity buffing, and subtle narrative manipulation.",
         "sequences": {
             9: "Spectator", 8: "Telepathist", 7: "Psychiatrist", 6: "Hypnotist",
             5: "Dreamwalker", 4: "Manipulator", 3: "Dreamweaver",
@@ -86,6 +161,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Hanged Man",
         "group": "God Almighty",
         "above": "God Almighty",
+        "archetype": "Blood Cultist & Soul Shepherd",
+        "category": "💀 Occult, Curses & Underworld",
+        "role": "Dark Caster / Hybrid Flesh Shifter",
+        "difficulty": "Advanced (Ability Hoarding)",
+        "summary": "Channels pain, sacrifice, and shadows. Can graze and trap the souls of fallen enemies to unleash their class spells, making them a terrifying chameleon in combat.",
+        "playstyle": "Flesh modification, enduring immense punishment, and building custom loadouts from devoured souls.",
         "sequences": {
             9: "Secrets Suppliant", 8: "Listener", 7: "Shadow Ascetic",
             6: "Rose Bishop", 5: "Shepherd", 4: "Black Knight",
@@ -97,6 +178,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "White Tower",
         "group": "God Almighty",
         "above": "God Almighty",
+        "archetype": "Omniscient Sage & Arcane Analyst",
+        "category": "🧠 Mind, Soul & Psychology",
+        "role": "Tactical Scholar / Spell Mimic",
+        "difficulty": "Moderate (Analytical Gameplay)",
+        "summary": "A deductive detective and magical savant who analyzes opposing magic in real time, reproduces simulated spells, and anticipates enemy tactics through pure ratiocination.",
+        "playstyle": "Preparation-heavy gameplay that analyzes and counters enemy builds with tailored spells.",
         "sequences": {
             9: "Reader", 8: "Student of Ratiocination", 7: "Detective",
             6: "Polymath", 5: "Mysticism Magister", 4: "Prophet",
@@ -107,6 +194,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Sun",
         "group": "God Almighty",
         "above": "God Almighty",
+        "archetype": "Radiant Paladin & Holy Purifier",
+        "category": "🌿 Nature, Light & Healing",
+        "role": "Holy Support / Anti-Undead Specialist",
+        "difficulty": "Very Beginner Friendly",
+        "summary": "Wields sacred solar fire that incinerates undead and demonic entities, purges insanity and curses from allies, and inspires courage across the battlefield.",
+        "playstyle": "Honest, direct holy damage, anti-corruption buffs, and indispensable team utility.",
         "sequences": {
             9: "Bard", 8: "Light Suppliant", 7: "Solar High Priest", 6: "Notary",
             5: "Priest of Light", 4: "Unshadowed", 3: "Justice Mentor",
@@ -117,6 +210,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Tyrant",
         "group": "God Almighty",
         "above": "God Almighty",
+        "archetype": "Storm Lord & Thunder Berserker",
+        "category": "⚔️ Warriors & Frontline Might",
+        "role": "Elemental Blaster / Oceanic Brawler",
+        "difficulty": "Very Beginner Friendly",
+        "summary": "The unstoppable master of oceans, raging winds, and apocalyptic thunderbolts. Possesses immense physical power and the ability to rain down lightning storms.",
+        "playstyle": "High-impact burst damage, destructive area-of-effect spells, and ferocious frontline brawling.",
         "sequences": {
             9: "Sailor", 8: "Folk of Rage", 7: "Seafarer", 6: "Windblessed",
             5: "Ocean Songster", 4: "Cataclysmic Interrer", 3: "Sea King",
@@ -127,6 +226,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Darkness",
         "group": "Eternal Darkness",
         "above": "Eternal Darkness",
+        "archetype": "Night Assassin & Dream Warden",
+        "category": "🗡️ Stealth, Rogues & Tricksters",
+        "role": "Stealth Infiltrator / Crowd Controller",
+        "difficulty": "Beginner Friendly",
+        "summary": "Needs little sleep, thrives in darkness, pacifies enemy hostility, forces opponents into enchanted slumber, and delivers silent, lethal strikes from shadow.",
+        "playstyle": "Ambush predator, emotional soothing, sleep crowd control, and graceful concealment.",
         "sequences": {
             9: "Sleepless", 8: "Midnight Poet", 7: "Nightmare",
             6: "Soul Assurer", 5: "Spirit Warlock", 4: "Nightwatcher",
@@ -138,6 +243,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Death",
         "group": "Eternal Darkness",
         "above": "Eternal Darkness",
+        "archetype": "Necromancer & Underworld Lord",
+        "category": "💀 Occult, Curses & Underworld",
+        "role": "Summoner / Withering Mage",
+        "difficulty": "Beginner Friendly",
+        "summary": "Commands skeletons, ghosts, and spirits of the dead. Emits withering rot and deathly cold that drains the life force of everything nearby.",
+        "playstyle": "Minion summoning, lethal debuff auras, spiritual resilience, and resistance to damage.",
         "sequences": {
             9: "Corpse Collector", 8: "Gravedigger", 7: "Spirit Medium",
             6: "Spirit Guide", 5: "Gatekeeper", 4: "Undying",
@@ -148,6 +259,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Twilight Giant",
         "group": "Eternal Darkness",
         "above": "Eternal Darkness",
+        "archetype": "Colossus Warrior & Fortress Guardian",
+        "category": "⚔️ Warriors & Frontline Might",
+        "role": "Heavy Tank / Frontline Juggernaut",
+        "difficulty": "Very Beginner Friendly",
+        "summary": "An indomitable fortress knight who can enlarge into a towering giant, conjure dawnbound armor, wield radiant greatswords, and absorb lethal attacks aimed at comrades.",
+        "playstyle": "Maximum durability, straightforward martial melee, and frontline protection.",
         "sequences": {
             9: "Warrior", 8: "Pugilist", 7: "Weapon Master", 6: "Dawn Paladin",
             5: "Guardian", 4: "Demon Hunter", 3: "Silver Knight",
@@ -158,6 +275,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Red Priest",
         "group": "Calamity of Destruction",
         "above": "Calamity of Destruction",
+        "archetype": "Tactical Pyromancer & War General",
+        "category": "⚔️ Warriors & Frontline Might",
+        "role": "Tactical Fire Blaster / Army Commander",
+        "difficulty": "Beginner Friendly",
+        "summary": "Combines devastating fire magic with battlefield taunts, traps, and tactical army coordination. Deals amplified damage when fighting alongside party members.",
+        "playstyle": "Explosive fire spells, aggressive provoker taunts, and high squad combat synergy.",
         "sequences": {
             9: "Hunter", 8: "Provoker", 7: "Pyromaniac", 6: "Conspirer",
             5: "Reaper", 4: "Iron-blooded Knight", 3: "War Bishop",
@@ -168,6 +291,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Demoness",
         "group": "Calamity of Destruction",
         "above": "Calamity of Destruction",
+        "archetype": "Cursed Thread Assassin & Calamity Witch",
+        "category": "🗡️ Stealth, Rogues & Tricksters",
+        "role": "Agile Infiltrator / Plague Debuffer",
+        "difficulty": "Moderate (Status Afflictions)",
+        "summary": "Spins razor-sharp invisible silk threads, unleashes black frost, spreads virulent plagues, and delivers deadly curse assassinations with terrifying elegance.",
+        "playstyle": "Evasive mobility, trap-laying with invisible threads, and devastating damage-over-time afflictions.",
         "sequences": {
             9: "Assassin", 8: "Instigator", 7: "Witch", 6: "Pleasure",
             5: "Affliction", 4: "Despair", 3: "Unaging", 2: "Catastrophe",
@@ -178,6 +307,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Hermit",
         "group": "Demon of Knowledge",
         "above": "Demon of Knowledge",
+        "archetype": "Esoteric Astrologer & Scroll Mage",
+        "category": "🔮 Divination & Mysteries",
+        "role": "Occult Scholar / Mystical Caster",
+        "difficulty": "Moderate (Esoteric Knowledge)",
+        "summary": "Studies constellations and mystic symbols. Can manifest fairy tales and occult lore into concrete physical spells, using magical scrolls and mystical ink.",
+        "playstyle": "Broad magical knowledge, utility rituals, and potent arcane burst spells.",
         "sequences": {
             9: "Mystery Pryer", 8: "Melee Scholar", 7: "Warlock",
             6: "Scrolls Professor", 5: "Constellations Master",
@@ -189,6 +324,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Paragon",
         "group": "Demon of Knowledge",
         "above": "Demon of Knowledge",
+        "archetype": "Arcane Artificer & Steampunk Engineer",
+        "category": "⚙️ Artificer & Arcane Machinery",
+        "role": "Magical Crafter / Gadget Specialist",
+        "difficulty": "Moderate (Item Creation)",
+        "summary": "A brilliant inventor of magical firearms, steam contraptions, alchemical compounds, and enchanted artifacts that empower themselves and their entire team.",
+        "playstyle": "Crafting specialized equipment, buffing technology, and ranged artillery support.",
         "sequences": {
             9: "Savant", 8: "Archaeologist", 7: "Appraiser", 6: "Artisan",
             5: "Astronomer", 4: "Alchemist", 3: "Arcane Scholar",
@@ -199,6 +340,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Chained",
         "group": "Father of Devils",
         "above": "Father of Devils",
+        "archetype": "Cursed Werewolf & Ghostly Avenger",
+        "category": "💀 Occult, Curses & Underworld",
+        "role": "Werewolf Brawler / Wraith Infiltrator",
+        "difficulty": "Moderate (Stance Shifting)",
+        "summary": "Suppresses inner feral madness to gain immense supernatural resilience. Can transform into a savage melee werewolf or an incorporeal wraith that phases through walls.",
+        "playstyle": "Dual-stance combat: unkillable spectral ghost or terrifying feral melee beast.",
         "sequences": {
             9: "Prisoner", 8: "Lunatic", 7: "Werewolf", 6: "Zombie",
             5: "Wraith", 4: "Puppet", 3: "Disciple of Silence",
@@ -209,6 +356,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Abyss",
         "group": "Father of Devils",
         "above": "Father of Devils",
+        "archetype": "Demonic Corruptor & Blood Duelist",
+        "category": "💀 Occult, Curses & Underworld",
+        "role": "Melee Berserker / Dark Caster",
+        "difficulty": "Moderate (High Risk, High Reward)",
+        "summary": "Infuses blade strikes with toxic sulfur flames, possesses supernatural danger intuition, and channels ruthless demonic instincts to annihilate opposition.",
+        "playstyle": "Relentless aggressive offense, poison damage, and deadly ambush instincts.",
         "sequences": {
             9: "Criminal", 8: "Unwinged Angel", 7: "Serial Killer",
             6: "Devil", 5: "Desire Apostle", 4: "Demon", 3: "Blatherer",
@@ -219,6 +372,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Moon",
         "group": "Goddess of Origin",
         "above": "Goddess of Origin",
+        "archetype": "Vampiric Herbalist & Lunar Shaman",
+        "category": "🌿 Nature, Light & Healing",
+        "role": "Alchemist / Sustained Hybrid",
+        "difficulty": "Beginner Friendly",
+        "summary": "Brews restorative potions, tames mystical beasts, and gains enhanced speed, agility, and rapid regeneration under the silver moonlight.",
+        "playstyle": "Healing elixirs, beast companions, and sustained agile hybrid combat.",
         "sequences": {
             9: "Apothecary", 8: "Beast Tamer", 7: "Vampire",
             6: "Potions Professor", 5: "Scarlet Scholar", 4: "Shaman King",
@@ -229,6 +388,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Mother",
         "group": "Goddess of Origin",
         "above": "Goddess of Origin",
+        "archetype": "Nature Druid & Life Creator",
+        "category": "🌿 Nature, Light & Healing",
+        "role": "Dedicated Healer / Flora Controller",
+        "difficulty": "Very Beginner Friendly",
+        "summary": "Accelerates botanical growth, heals severe wounds, cultivates supernatural herbs, and animates defensive earth golems to protect allies.",
+        "playstyle": "Supreme healing, battlefield vine entanglements, and natural fortress construction.",
         "sequences": {
             9: "Planter", 8: "Doctor", 7: "Harvest Priest", 6: "Biologist",
             5: "Druid", 4: "Ancient Alchemist", 3: "Pallbearer",
@@ -239,6 +404,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Black Emperor",
         "group": "Anarchy",
         "above": "Anarchy",
+        "archetype": "Rule Distorter & Tyrant of Entropy",
+        "category": "⚖️ Law, Order & Entropy",
+        "role": "Disruption Tank / Battlefield Debuffer",
+        "difficulty": "Advanced (Rules Exploitation)",
+        "summary": "Twists the fundamental laws of reality, finds loopholes in magical rules, bribes enemy spells into backfiring, and thrives amidst lawless chaos.",
+        "playstyle": "Disrupting enemy spellcasting rotations, setting up chaotic debuffs, and commanding absolute obedience.",
         "sequences": {
             9: "Lawyer", 8: "Barbarian", 7: "Briber", 6: "Baron of Corruption",
             5: "Mentor of Disorder", 4: "Count of the Fallen",
@@ -250,6 +421,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Justiciar",
         "group": "Anarchy",
         "above": "Anarchy",
+        "archetype": "Heavenly Arbiter & Law Enforcer",
+        "category": "⚖️ Law, Order & Entropy",
+        "role": "Crowd Controller / Zone Enforcer",
+        "difficulty": "Moderate (Discipline & Zones)",
+        "summary": "Establishes sacred prohibitions (e.g. 'Violence is forbidden in this zone') and enforces harsh penalties on those who violate order.",
+        "playstyle": "Controlling where and how enemies can fight, silencing enemy skills, and executing decisive verdicts.",
         "sequences": {
             9: "Arbiter", 8: "Sheriff", 7: "Investigator", 6: "Judge",
             5: "Disciplinary Paladin", 4: "Imperative Mage",
@@ -260,6 +437,12 @@ PATHWAYS: Dict[str, Dict] = {
         "name": "Wheel of Fortune",
         "group": "Key of Light",
         "above": "Key of Light",
+        "archetype": "Fate Gambler & Probability Bender",
+        "category": "🎲 Fate, Luck & Probability",
+        "role": "Luck Manipulator / Calamity Redirection",
+        "difficulty": "Beginner Friendly",
+        "summary": "Possesses incredible premonition and supernatural luck. Automatically dodges fatal attacks through pure coincidence and redirects disaster onto attackers.",
+        "playstyle": "Wild fortune buffs, miraculous survival rolls, and forcing enemy spells to catastrophically miss.",
         "sequences": {
             9: "Monster", 8: "Robot", 7: "Lucky One", 6: "Calamity Priest",
             5: "Winner", 4: "Misfortune Mage", 3: "Chaoswalker",
@@ -301,12 +484,35 @@ def resolve_pathway(name: str) -> str | None:
     return None
 
 
-def sequence_name(key: str, sequence: int) -> str:
-    """Return the sequence title for a pathway and sequence number."""
+def sequence_name(key: str, sequence: int, reveal_seq0: bool = True) -> str:
+    """Return the sequence title for a pathway and sequence number.
+    
+    If reveal_seq0 is False and sequence is 0, returns SAFE_SEQ0_TITLE ('??? [Ascension Mystery]')
+    to prevent spoiling True God identities for non-readers.
+    """
     data = get_pathway(key)
     if data is None:
         return f"Sequence {sequence}"
+    if sequence == 0 and not reveal_seq0:
+        return SAFE_SEQ0_TITLE
     return data["sequences"].get(sequence, f"Sequence {sequence}")
+
+
+def safe_sequence_name(key: str, sequence: int) -> str:
+    """Return the sequence title with Sequence 0 strictly censored/hidden from spoilers."""
+    return sequence_name(key, sequence, reveal_seq0=False)
+
+
+def get_safe_sequences(key: str, reveal_seq0: bool = False) -> Dict[int, str]:
+    """Return the pathway's sequence ladder with Sequence 0 masked if reveal_seq0 is False."""
+    data = get_pathway(key)
+    if not data:
+        return {}
+    seqs = dict(data["sequences"])
+    if not reveal_seq0 and 0 in seqs:
+        seqs[0] = SAFE_SEQ0_TITLE
+    return seqs
+
 
 
 def rank_title(sequence: int) -> str:
